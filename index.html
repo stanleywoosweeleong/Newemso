@@ -73,6 +73,10 @@
     line-height:1.35;border-top:1px solid;
     border-bottom-left-radius:14px;border-bottom-right-radius:14px}
   .verdict-i{font-size:17px;flex-shrink:0}
+  .herolag{font-size:11.5px;line-height:1.6;color:var(--muted);margin:8px 14px 0;
+    padding-top:8px;border-top:1px dashed var(--line)}
+  .heroadv{font-size:12.5px;line-height:1.6;color:#92400e;margin:7px 14px 0}
+  .heroadv .outdate{color:#b8860b;font-weight:400}
   .verdict-warm{background:#fef7ed;color:#9a3412;border-top-color:#fed7aa}
   .verdict-cool{background:#eff6ff;color:#1d4ed8;border-top-color:#bfdbfe}
   .verdict-neutral{background:#f1f5f9;color:#475569;border-top-color:#e2e8f0}
@@ -93,6 +97,9 @@
   .offlinebar span{display:block;font-size:11px;font-weight:400;margin-top:3px;opacity:.85}
   .iodage{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 11px;
     margin:10px 0 0;font-size:12.5px;line-height:1.6;color:#92400e}
+  .iodneutral{background:#f8fafc;border:1px solid var(--line);border-left:3px solid #94a3b8;
+    border-radius:0 8px 8px 0;padding:11px 13px;margin:8px 0 0;font-size:12.5px;
+    line-height:1.6;color:#475569}
   .iodfail{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:11px 13px;
     margin:8px 0 0;font-size:12.5px;line-height:1.6;color:#b91c1c}
   .surgealert{background:#fef2f2;border:1.5px solid #f87171;border-radius:10px;
@@ -840,6 +847,10 @@ var T = {
                en:'IOD = the east–west sea-temperature gradient across the Indian Ocean. It directly affects Malaysian rainfall, especially the eastern side (near Sumatra). From BOM, updated weekly.'},
   iodLatest:  {zh:'最新值 (IOD)', en:'Latest (IOD)'},
   iodSrc:     {zh:'数据来源', en:'Source'},
+  iodMonthlyNote:{zh:'ℹ️ BOM 本周没有公布 IOD 数值，所以这里显示的是备用的【月度】DMI（NOAA PSL，HadISST），月份：{m}。月度值本来就会落后一到两个月，适合看季节方向，不适合当作「本周」的依据。',
+                  en:'ℹ️ BOM published no IOD figure this week, so this is the fallback MONTHLY DMI (NOAA PSL, HadISST) for {m}. A monthly value naturally runs one to two months behind — useful for the seasonal direction, not as a reading for this week.'},
+  iodAgedMon: {zh:'⚠️ 月度 DMI 的最新月份为 {m}，已超过月度源的正常延迟。数值仍列出供参考，但不据此给出农事建议。',
+               en:'⚠️ The newest monthly DMI is {m}, which is beyond even the normal lag for a monthly source. The value is shown for reference only — no farm advice is drawn from it.'},
   iodFail:    {zh:'IOD 数值暂时无法取得。这通常只是数据源 (BOM) 改了网页措辞，属于正常情况——为避免误导，这里不显示过期或猜测的数值。厄尔尼诺数据照常运作。详情见上方 ⓘ 说明。',
                en:'IOD value temporarily unavailable. This usually just means the data source (BOM) reworded their page — it\'s expected. To avoid misleading you, no stale or guessed value is shown. The El Niño data is unaffected. See the ⓘ guide for details.'},
   iodPrev:    {zh:'上一月', en:'Previous month'},
@@ -1021,8 +1032,8 @@ var T = {
                 en:'What is "anomaly"? = the difference from normal, NOT the actual water temperature. E.g. sea = 29°C, anomaly = +1.7 means "1.7 degrees warmer than this patch\u2019s usual average for this season". Plus = warmer than normal (El Niño direction); minus = cooler than normal (La Niña direction); near 0 = normal. Note: minus means "cooler than normal", not that the water is actually cold — the Pacific is always warm. "Normal" is the 30-year (1991–2020) average, which is why the new file is called "9120".'},
   helpSeason:  {zh:'像 MAM、FMA 这种 = 三个月一组，用每个月的英文首字母。MAM = 三月-四月-五月（Mar-Apr-May），FMA = 二月-三月-四月（Feb-Mar-Apr）。每过一个月就往前推一格，所以差不多每月有一个新数字。',
                en:'Labels like MAM, FMA = a group of 3 months, using each month\u2019s first letter. MAM = Mar-Apr-May, FMA = Feb-Mar-Apr. It slides forward one month at a time, so there\u2019s a new value about every month.'},
-  helpWhat34:  {zh:'Niño 3.4 = 太平洋赤道上 一块固定海域 的名字（在国际换日线附近，离马来西亚很远）。科学家选它，是因为它的海温最能反映厄尔尼诺／拉尼娜。旁边的数字不是实际水温，而是 比正常高或低几度。RONI 和「每周 Niño 3.4」看的是同一块海，只是 RONI 是三个月平均（慢、稳），每周值是最新一周（快、跳动）。',
-               en:'Niño 3.4 = the name of a fixed patch of ocean on the equator in the central Pacific (near the date line, far from Malaysia). Scientists use it because its sea temperature best reflects El Niño / La Niña. The number beside it is NOT the actual water temperature — it\u2019s how many degrees above or below normal. RONI and "Weekly Niño 3.4" read the same patch: RONI is a 3-month average (slow, steady), the weekly is the latest single week (fast, jumpy).'},
+  helpWhat34:  {zh:'Niño 3.4 = 太平洋赤道上 一块固定海域 的名字（在国际换日线附近，离马来西亚很远）。科学家选它，是因为它的海温最能反映厄尔尼诺／拉尼娜。旁边的数字不是实际水温，而是 比正常高或低几度。RONI 和「每周 Niño 3.4」看的是同一块海，但不是同一个算法：RONI 会先减去整个热带海洋（20°S–20°N）的平均升温，再取三个月平均（慢、稳、已扣除全球变暖）；每周值是最新一周的原始距平，什么都没扣（快、跳动、数字偏大）。所以两者在厉尔尼诺期间会差得很明显，这是正常的。',
+               en:'Niño 3.4 = the name of a fixed patch of ocean on the equator in the central Pacific (near the date line, far from Malaysia). Scientists use it because its sea temperature best reflects El Niño / La Niña. The number beside it is NOT the actual water temperature — it\u2019s how many degrees above or below normal. RONI and "Weekly Niño 3.4" read the same patch of ocean but are not the same calculation: RONI first subtracts the average warming of the whole tropical ocean (20°S–20°N) and then averages three months (slow, steady, global warming removed); the weekly is the raw anomaly for the latest single week with nothing subtracted (fast, jumpy, and a bigger number). During El Niño the two will differ noticeably — that is expected.'},
   helpWalker: {zh:'❓ 那么远的海（约 12,500 公里外）怎么会影响我们？靠的是一条横跨太平洋的空气大环流——「沃克环流 (Walker Circulation)」。平常，我们旁边（印尼、马来西亚一带）的海最暖，暖海把空气加热、上升成云致雨——这是我们头顶的「湿引擎」。厄尔尼诺时，这块暖水东移到中太平洋，上升致雨的区域也跟着东移、离开我们；而空气环流是一个闭环：一头上升，另一头就要下沉。上升区东移后，下沉的一头正好压在马来西亚上方——下沉气流是干的，抑制成云，于是我们偏干。所以不是热「传」过来，而是我们和中太平洋是同一个跷跷板的两端：那头升（湿），我们这头就降（干）。拉尼娜则相反，我们偏湿。这种「远隔相关」叫 teleconnection。',
                en:'❓ How can an ocean that far away (~12,500 km) affect us? Through a giant loop of air spanning the Pacific — the Walker Circulation. Normally the ocean right beside us (around Indonesia and Malaysia) is the warmest; that warm water heats the air, which rises into clouds and rain — our overhead "wet engine." During El Niño, that warm pool shifts east to the central Pacific, and the rising, rainy zone follows it away from us. But the air loop is closed: where it rises on one side, it must sink on the other. With the rising branch shifted east, the sinking branch lands right over Malaysia — and sinking air is dry, suppressing clouds, so we lean drier. It isn\u2019t that heat travels here; it\u2019s that we and the central Pacific are two ends of the same see-saw: their end goes up (wet), our end goes down (dry). La Niña is the reverse — wetter for us. This link across distance is called a teleconnection.'},
   walkerTitle:{zh:'沃克环流：厄尔尼诺时为何我们偏干', en:'Walker Circulation: why El Niño leaves us drier'},
@@ -1033,8 +1044,10 @@ var T = {
   walkerWarm: {zh:'暖海东移 →', en:'warm water shifts east →'},
   walkerNormalNote:{zh:'平常（非厄尔尼诺）：暖海在我们这侧，上升致雨在马来西亚上方——我们偏湿。',
                en:'Normal (non-El Niño): the warm water is on our side and the rising, rainy branch sits over Malaysia — we lean wetter.'},
-  helpRoni:    {zh:'RONI = NOAA 官方采用的「相对海洋尼诺指数」，每月更新一次，看的是 整个季节的平均。这是判断大趋势的主指标。',
-               en:'RONI = NOAA\u2019s official "Relative Oceanic Niño Index", updated monthly, based on a whole season\u2019s average. This is the main indicator for the big trend.'},
+  helpRoni:    {zh:'RONI =「相对海洋尼诺指数」，NOAA 自 2026 年 2 月起的官方指标，取三个月平均、每月更新。判断大趋势看它；因为是季平均，它比现实慢约 6 周。详情见 ⓘ 说明。',
+               en:'RONI = the Relative Oceanic Niño Index, NOAA official index since February 2026. A three-month mean, updated monthly. Read it for the big trend; because it is a seasonal average it runs about six weeks behind the present. Full explanation in the ⓘ guide.'},
+  helpRoniWhy: {zh:'🌊 为什么是 RONI 而不是 ONI？整个热带海洋都在变暖。旧的 ONI 拿太平洋的海温和 30 年平均相比，于是把这份全球增温也算进了厉尔尼诺的强度里 —— 厉尔尼诺看起来偏强，拉尼娜看起来偏弱。RONI 先减去整个热带（20°S–20°N）的平均距平，只留下太平洋自己的异常 —— 而风与雨真正回应的正是这一部分。NOAA 气候预测中心（CPC）已于 2026 年 2 月改用 RONI 作为官方指标，澳洲 BOM 也在 2025 年 9 月做了同样的切换。代价是反应慢：它取三个月平均、每月才发一次，事件正在发展时一定会低估当下。所以看「现在」要把三样一起读：RONI（季节）、每周 Niño 3.4（最快）、以及 NOAA 官方展望（前瞻）。',
+               en:'🌊 Why RONI and not ONI? The whole tropical ocean is warming. The old ONI compared Pacific sea temperature against a 30-year average, so that global warming got counted as El Niño strength — El Niños looked stronger and La Niñas weaker than the atmosphere actually felt them. RONI subtracts the tropical-wide (20°S–20°N) average first, leaving only the Pacific own anomaly — and that is the part the winds and rain respond to. NOAA Climate Prediction Center adopted RONI as its official index in February 2026, and Australia BOM made the same switch in September 2025. The cost is speed: it is a three-month mean published monthly, so while an event is developing it will always understate the present. Read three things together for the present: RONI (the season), the weekly Niño 3.4 (the fastest), and the NOAA outlook (what is ahead).'},
   mapTitle:   {zh:'四个监测海域（由西到东）', en:'The four monitoring boxes (west to east)'},
   mapCardTitle:{zh:'监测海域地图', en:'Monitoring-region map'},
   mapCardHint:{zh:'NOAA CPC 每周监测这四个海域的海面温度距平。方框按真实经纬度投影，边界贴着球面而不是横切过去。颜色为该海域本周的距平：红＝偏暖，蓝＝偏冷。可拖动旋转。',
@@ -1049,6 +1062,16 @@ var T = {
   wkRegionsMoved:{zh:'Niño 1+2 / 3 / 4 的本周数值见下方地图卡，不在这里重复。',
                   en:'Niño 1+2 / 3 / 4 for this week are on the map card below, not repeated here.'},
   wkSame:     {zh:'持平', en:'no change'},
+  // --- hero: the lag, and the direction of travel ---
+  heroLag:    {zh:'RONI 是三个月平均值，上面这个数字描述的是 {s}，比今天落后约 6 周。事件正在发展时，它一定会低估当下。最新一周的 Niño 3.4 见下方。',
+               en:'RONI is a three-month mean, so the number above describes {s} — roughly six weeks behind today. While an event is developing it will always understate the present. The latest weekly Niño 3.4 is below.'},
+  strengthening:{zh:'正在增强', en:'strengthening'},
+  weakening:  {zh:'正在减弱', en:'weakening'},
+  heroAdvisory:{zh:'NOAA 最新公告：', en:'Latest NOAA bulletin: '},
+  wkVsRoni:   {zh:'为什么和上面的 RONI 不同？两者看同一片海，但 RONI 会先减去整个热带海洋的平均升温，再取三个月平均；这里的每周值是未扣除的原始距平，而且只有一周。所以厉尔尼诺期间，这个数字通常明显高于 RONI —— 两个都对，量的是不同的东西。',
+               en:'Why does this differ from the RONI above? Both read the same patch of ocean, but RONI first subtracts the warming of the whole tropical ocean and then averages three months; this weekly figure is the raw anomaly for a single week, with nothing subtracted. During El Niño it therefore usually sits well above RONI. Both are correct — they measure different things.'},
+  iodNeutralNoVal:{zh:'BOM 目前报 IOD 为中性，并未公布具体数值（他们通常只在事件发生时才给出数字）。这不是抓取失败 —— 数据源就是这样写的。最新说明日期：{d}。',
+                   en:'BOM currently reports the IOD as neutral and publishes no figure (they usually only quote a number while an event is running). This is not a scrape failure — it is what the source says. Source statement dated: {d}.'},
   mapLegWarm: {zh:'偏暖（厄尔尼诺方向）', en:'warmer (El Niño direction)'},
   mapLegCool: {zh:'偏冷（拉尼娜方向）', en:'cooler (La Niña direction)'},
   mapLeg34:   {zh:'Niño 3.4（主指标，只描边）', en:'Niño 3.4 (main index, outline only)'},
@@ -1379,14 +1402,35 @@ function seasonPlain(code){
 // shows a clear "needs updating" notice instead of any stale/guessed number
 // and instead of any rainfall advice. Returns '' only when there's no IOD
 // object at all (e.g. very first load offline with no cache).
+// Fall back from BoM's weekly figure to the monthly DMI chain.
+// The monthly value is NEVER silently substituted: it is flagged monthly:true
+// so the card labels it, states its month, and judges its age on a monthly
+// yardstick instead of a weekly one.
+function withMonthlyIod(iod, dmiText){
+  if (iod && iod.ok === true && typeof iod.value === 'number') return iod;
+  var m = parseDmiMonthly(dmiText);
+  if (!m) return iod;
+  return { ok:true, value:m.value, asOf:m.asOf, ym:m.ym, monthly:true,
+           bom:(iod && iod.neutral) ? 'neutral' : (iod && iod.reason) || null };
+}
+
 function iodCard(iod){
   if (!iod) return '';
   // --- Failure guard: scrape broke (regex missed, BOM down, etc.) ---
   if (!iod.ok || typeof iod.value !== 'number') {
+    // Two situations, two messages. "BOM says neutral" is routine reporting;
+    // "the scrape broke" needs attention. Both still show no number and give no
+    // farm advice -- but only one of them is a fault. The neutral notice needs
+    // a date we can age-check: an undated "neutral" could be a year old, so
+    // without one we fall back to the loud failure.
+    var neutralOk = iod.neutral && iod.asOf && bomDateTs(iod.asOf) > 0
+                    && (Date.now() - bomDateTs(iod.asOf)) <= 35*24*3600*1000;
     return '<div class="card">'
       +'<div class="cardtitle"><span class="dot"></span>'+tr('iodTitle')+'</div>'
       +'<div class="cardhint">'+tr('iodHint')+'</div>'
-      +'<div class="iodfail">'+tr('iodFail')+'</div>'
+      +(neutralOk
+        ? '<div class="iodneutral">'+tr('iodNeutralNoVal').replace('{d}', iod.asOf)+'</div>'
+        : '<div class="iodfail">'+tr('iodFail')+'</div>')
     +'</div>';
   }
   var v = iod.value;
@@ -1396,7 +1440,12 @@ function iodCard(iod){
   var badgeCls = p==='pos' ? 'phase-warm' : p==='neg' ? 'phase-cool' : 'phase-neutral';
   var col = p==='pos' ? 'var(--warm)' : p==='neg' ? 'var(--cool)' : 'var(--ink)';
   var asOfTs = iod.asOf ? bomDateTs(iod.asOf) : 0;
-  var tooOld = asOfTs > 0 && (Date.now() - asOfTs) > 35*24*3600*1000;
+  // A monthly index is EXPECTED to sit a month or two back -- PSL runs about
+  // two to three months behind. Judging it by the weekly 35-day rule would
+  // permanently mislabel a perfectly normal monthly value as stale, so the
+  // yardstick follows the source.
+  var maxAge = iod.monthly ? 75 : 35;
+  var tooOld = asOfTs > 0 && (Date.now() - asOfTs) > maxAge*24*3600*1000;
   var asOfTxt = iod.asOf ? iod.asOf : '';
 
   var html = '<div class="card">'
@@ -1410,10 +1459,12 @@ function iodCard(iod){
   if (tooOld) {
     // Value present but the source date is stale — flag it (advice withheld
     // in the orchard card too).
-    html += '<div class="iodage">'+tr('iodAged').replace('{m}', asOfTxt)+'</div>';
+    html += '<div class="iodage">'+tr(iod.monthly?'iodAgedMon':'iodAged').replace('{m}', asOfTxt)+'</div>';
   }
   html += '<div class="row" style="margin-top:8px"><span class="k">'+tr('iodLatest')+'</span><span class="v '+pClass+'">'+(asOfTxt?asOfTxt+' · ':'')+fmt(v)+'</span></div>'
-    +'<div class="row"><span class="k">'+tr('iodSrc')+'</span><span class="v iodsrc">BOM</span></div>'
+    +'<div class="row"><span class="k">'+tr('iodSrc')+'</span><span class="v iodsrc">'
+      +(iod.monthly ? 'NOAA PSL' : 'BOM')+'</span></div>'
+    +(iod.monthly ? '<div class="iodneutral">'+tr('iodMonthlyNote').replace('{m}', iod.ym||asOfTxt)+'</div>' : '')
   +'</div>';
   return html;
 }
@@ -1422,7 +1473,8 @@ function iodCard(iod){
 function iodFarmLine(iod){
   if (!iod || !iod.ok || typeof iod.value !== 'number') return '';
   var asOfTs = iod.asOf ? bomDateTs(iod.asOf) : 0;
-  if (asOfTs > 0 && (Date.now() - asOfTs) > 35*24*3600*1000) return ''; // stale
+  var maxAge = iod.monthly ? 75 : 35;   // see iodCard: monthly runs further back
+  if (asOfTs > 0 && (Date.now() - asOfTs) > maxAge*24*3600*1000) return ''; // stale
   var p = iodPhaseOf(iod.value);
   return p==='pos' ? tr('iodFarmPos') : p==='neg' ? tr('iodFarmNeg') : tr('iodFarmNeu');
 }
@@ -1934,13 +1986,18 @@ function load(){
   // fetched directly (not via the Worker). Also a bonus — null on failure.
   var monFeed = fetchMonsoon().catch(function(){ return null; });
   var outFeed = getFeed('outlook').catch(function(){ return null; });
-  Promise.all([ getFeed('roni'), getFeed('weekly'), iodFeed, mjoFeed, monFeed, outFeed ])
+  // Monthly DMI: only ever used if BoM has no weekly figure. Bonus feed, so a
+  // failure resolves to null rather than taking the whole load down.
+  var dmiFeed = getFeed('dmimon').catch(function(){ return null; });
+  Promise.all([ getFeed('roni'), getFeed('weekly'), iodFeed, mjoFeed, monFeed, outFeed, dmiFeed ])
     .then(function(res){
       var roni = parseSeasonal(res[0], 2);   // RONI anom in col 2
       var weekly = parseWeekly(res[1]);
       if (!roni.length || !weekly.length) throw new Error('empty parse');
       // IOD comes back as JSON {ok,value,asOf} from the Worker's BOM scrape.
-      var iod = parseIod(res[2]);
+      // BoM weekly first; the monthly chain only fills in when BoM gives us
+      // no usable figure (event over, wording changed, Worker down).
+      var iod = withMonthlyIod(parseIod(res[2]), res[6]);
       var mjo = parseMJO(res[3]);
       var mon = res[4]; // already a computed object (or null)
       var out = parseOutlook(res[5]);
@@ -1948,7 +2005,7 @@ function load(){
       try {
         localStorage.setItem('enso-cache', JSON.stringify({
           roni: res[0], weekly: res[1], iod: res[2] || '', mjo: res[3] || '',
-          mon: mon || null, out: res[5] || '', at: Date.now()
+          mon: mon || null, out: res[5] || '', dmimon: res[6] || '', at: Date.now()
         }));
       } catch(e){ /* storage full or blocked — ignore */ }
       render(roni, weekly, null, iod, mjo, mon, out);
@@ -1960,7 +2017,7 @@ function load(){
       if (raw && raw.roni && raw.weekly) {
         var roni = parseSeasonal(raw.roni, 2);
         var weekly = parseWeekly(raw.weekly);
-        var iod = parseIod(raw.iod);
+        var iod = withMonthlyIod(parseIod(raw.iod), raw.dmimon);
         var mjo = parseMJO(raw.mjo);
         var out = parseOutlook(raw.out);
         if (roni.length && weekly.length) { render(roni, weekly, raw.at, iod, mjo, raw.mon||null, out); return; }
@@ -1970,12 +2027,54 @@ function load(){
 }
 // Parse the Worker's IOD JSON. Returns {ok,value,asOf} on success, or
 // {ok:false} on any problem — the card uses ok:false to show a loud notice.
+// Monthly DMI parser. Handles BOTH shapes the Worker's dmimon chain can
+// return: PSL CSV rows (YYYY-MM-01, value) and the PSL standard format
+// (year followed by 12 monthly values). -9999 is the missing flag; PSL pads
+// the rest of the current year with it, so "last row" is not "last value".
+// Ported from SUHU's latestMonthly(), widened for the CSV shape.
+function parseDmiMonthly(text){
+  if (!text || text.charAt(0) === '{') return null;   // 502 JSON, not data
+  var best = null, lines = String(text).replace(/<[^>]+>/g,' ').split(/\r?\n/);
+  function keep(y, m, v){
+    if (!isFinite(v) || v <= -90 || v >= 90) return;   // missing flag
+    if (!best || y > best.year || (y === best.year && m > best.month))
+      best = { year:y, month:m, value:v };
+  }
+  for (var i=0;i<lines.length;i++){
+    var ln = lines[i].trim();
+    if (!ln) continue;
+    var csv = ln.match(/^(\d{4})-(\d{2})-\d{2}\s*,\s*(-?\d+(?:\.\d+)?)/);
+    if (csv){ keep(+csv[1], +csv[2], parseFloat(csv[3])); continue; }
+    var toks = ln.split(/\s+/).map(Number);
+    if (toks.length < 2) continue;
+    var yr = toks[0];
+    if (!Number.isInteger(yr) || yr < 1870 || yr > 2100) continue;
+    toks.slice(1,13).forEach(function(v,k){ keep(yr, k+1, v); });
+  }
+  if (!best) return null;
+  var MN = ['January','February','March','April','May','June','July',
+            'August','September','October','November','December'];
+  return {
+    value: best.value,
+    ym: best.year + '-' + (best.month<10?'0':'') + best.month,
+    // Dated mid-month so the existing bomDateTs()/age machinery works unchanged.
+    asOf: '15 ' + MN[best.month-1] + ' ' + best.year
+  };
+}
+
 function parseIod(text){
   if (!text) return { ok:false };
   try {
     var o = (typeof text === 'string') ? JSON.parse(text) : text;
     if (o && o.ok === true && typeof o.value === 'number') {
       return { ok:true, value:o.value, asOf:o.asOf || null };
+    }
+    // BOM only quotes a figure while an IOD event is running. When they say
+    // "neutral" in prose with no number, that is the source reporting normally
+    // -- not our regex breaking. The Worker distinguishes the two; carry the
+    // distinction through so the card can say which one happened.
+    if (o && o.neutral === true) {
+      return { ok:false, neutral:true, asOf:o.asOf || null, reason:'neutral, no figure' };
     }
     return { ok:false, reason:(o && o.reason) || 'no data' };
   } catch(e){ return { ok:false, reason:'bad json' }; }
@@ -2098,11 +2197,28 @@ function render(roni, weekly, cachedAt, iod, mjo, mon, out){
     return '<span>'+(i%3===0 ? '<b>'+h.date.slice(0,5)+'</b>' : '')+'</span>';
   }).join('');
 
+  // ---- Direction of travel ------------------------------------------------
+  // RONI is a 3-month mean published monthly, so the headline necessarily lags
+  // the present by ~6 weeks. During onset it reads "weak" while the event is
+  // already past that. We qualify it, but ONLY from like-for-like comparisons:
+  // t3 is RONI against RONI, wkDelta is weekly against weekly. The two indices
+  // are never differenced against each other -- RONI subtracts the tropical
+  // mean and the weekly value does not, so the gap between them is a units
+  // difference, not a measure of lag. Both trends must agree, or we say nothing.
+  var momentum = null;
+  if (!wkStale && strength){
+    var bothUp   = (t3 === 'rising'  && wkDelta >  0.05);
+    var bothDown = (t3 === 'falling' && wkDelta < -0.05);
+    if (phase === 'warm') momentum = bothUp ? 'strengthening' : bothDown ? 'weakening' : null;
+    if (phase === 'cool') momentum = bothDown ? 'strengthening' : bothUp ? 'weakening' : null;
+  }
+
   var phaseClass = 'phase-'+phase;
   var phaseLabel = phase==='warm'?tr('elnino'):phase==='cool'?tr('lanina'):tr('neutral');
   var phaseCond  = phase==='warm'?tr('elninoCond'):phase==='cool'?tr('laninaCond'):tr('neutralCond');
   var vClass = phase==='warm'?'warm':phase==='cool'?'cool':'neutral';
   var strengthTxt = strength ? tr(strength)+' · '+phaseLabel : tr('neutral');
+  if (momentum) strengthTxt += (LANG==='zh' ? '（'+tr(momentum)+'）' : ' · '+tr(momentum));
   var farmKey = phase==='warm'?'farmWarm':phase==='cool'?'farmCool':'farmNeutral';
 
   // Live, data-driven "right now" sentence (observed state only).
@@ -2143,6 +2259,11 @@ function render(roni, weekly, cachedAt, iod, mjo, mon, out){
     +'<div class="anomunit">'+tr('anomUnit')+'</div>'
     +(strength?'<div class="strength" style="color:'+(phase==='warm'?'var(--warm)':'var(--cool)')+'">'+strengthTxt+'</div>':'')
     +'<div class="phase-desc">RONI · '+latest.seas+' '+latest.yr+' <span class="seas-plain">('+seasonPlain(latest.seas)+')</span></div>'
+    +'<div class="herolag">'+tr('heroLag').replace('{s}', latest.seas+' '+latest.yr+' ('+seasonPlain(latest.seas)+')')+'</div>'
+    +(out && out.status
+        ? '<div class="heroadv">'+tr('heroAdvisory')+'<b>'+outlookStatusLabel(out.status)+'</b>'
+          +(out.issued?' <span class="outdate">('+out.issued+')</span>':'')+'</div>'
+        : '')
     +'<div class="verdict '+verdict.cls+'"><span class="verdict-i">'+verdict.icon+'</span>'+verdict.text+'</div>'
   +'</div>'
 
@@ -2175,6 +2296,7 @@ function render(roni, weekly, cachedAt, iod, mjo, mon, out){
     +'<div class="wktrend">'+tr('wkTrendLbl')+'</div>'
     +'<div class="spark spark-wk">'+wkBars+'</div>'
     +'<div class="axis-row">'+wkAxis+'</div>'
+    +'<div class="mapnote">'+tr('wkVsRoni')+'</div>'
     +'<div class="mapnote">'+tr('wkRegionsMoved')+'</div>'
   +'</div>'
 
@@ -2387,6 +2509,7 @@ function helpContent(){
     +'<p>🌡️ '+tr('helpAnomaly')+'</p>'
     +'<div class="helpdiv"></div>'
     +'<p>📅 '+tr('helpSeason')+'</p>'
+    +'<p>'+tr('helpRoniWhy')+'</p>'
     +'<p>🌊 '+tr('helpWhat34')+'</p>'
     +'<div class="maptitle">🗺️ '+tr('mapTitle')+'</div>'
     +'<div class="mapwrap">'+ninoMap()+'</div>'
