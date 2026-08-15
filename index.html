@@ -172,6 +172,9 @@
   .maplegend i{display:inline-block;width:16px;height:9px;border-radius:2px;
     vertical-align:-1px;margin-right:4px}
   .mapnote{font-size:11.5px;color:var(--muted);line-height:1.6;margin-top:8px}
+  .wktrend{font-size:11.5px;color:var(--muted);margin:13px 0 -2px}
+  .spark.spark-wk{height:50px;gap:2px}
+  .spark.spark-wk + .axis-row{gap:2px}
   .help .outlook{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;
     padding:11px 12px;margin-top:10px}
   .help .outlook-h{font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px}
@@ -988,8 +991,6 @@ var T = {
   week:       {zh:'当周', en:'This week'},
   weekAgo:    {zh:'一周前', en:'Week ago'},
   nino34:     {zh:'Niño 3.4', en:'Niño 3.4'},
-  nino4:      {zh:'Niño 4', en:'Niño 4'},
-  nino3:      {zh:'Niño 3', en:'Niño 3'},
   weak:       {zh:'弱', en:'Weak'},
   moderate:   {zh:'中等', en:'Moderate'},
   strong:     {zh:'强', en:'Strong'},
@@ -1043,6 +1044,11 @@ var T = {
   mapDragHint:{zh:'拖动旋转 · 滚轮／双指缩放', en:'drag to rotate · wheel/pinch to zoom'},
   mapZoomIn:  {zh:'放大', en:'Zoom in'},
   mapZoomOut: {zh:'缩小', en:'Zoom out'},
+  wkChange:   {zh:'较上周', en:'Change vs last week'},
+  wkTrendLbl: {zh:'近 12 周 Niño 3.4 走势', en:'Niño 3.4, last 12 weeks'},
+  wkRegionsMoved:{zh:'Niño 1+2 / 3 / 4 的本周数值见下方地图卡，不在这里重复。',
+                  en:'Niño 1+2 / 3 / 4 for this week are on the map card below, not repeated here.'},
+  wkSame:     {zh:'持平', en:'no change'},
   mapLegWarm: {zh:'偏暖（厄尔尼诺方向）', en:'warmer (El Niño direction)'},
   mapLegCool: {zh:'偏冷（拉尼娜方向）', en:'cooler (La Niña direction)'},
   mapLeg34:   {zh:'Niño 3.4（主指标，只描边）', en:'Niño 3.4 (main index, outline only)'},
@@ -2059,6 +2065,39 @@ function render(roni, weekly, cachedAt, iod, mjo, mon, out){
   // so we can tell a bad feed (few/old rows) from an app bug.
   var wkDebug = weekly.length + ' rows · ' + weekly[0].date + ' → ' + wkLatest.date;
 
+  // Week-on-week change in Niño 3.4 -- the thing this card exists to show.
+  // Withheld entirely when the feed is stale: a delta between two old rows is
+  // a real number about the wrong fortnight.
+  var wkDelta = wkLatest.nino34 - wkPrev.nino34;
+  var wkDeltaTxt, wkDeltaCol;
+  if (wkStale){
+    wkDeltaTxt = '—'; wkDeltaCol = '#94a3b8';
+  } else if (Math.abs(wkDelta) < 0.05){
+    wkDeltaTxt = tr('wkSame'); wkDeltaCol = '#475569';
+  } else {
+    wkDeltaTxt = (wkDelta>0 ? '▲ +' : '▼ −')
+               + Math.abs(wkDelta).toFixed(2) + '°C';
+    wkDeltaCol = wkDelta>0 ? '#dc2626' : '#2563eb';
+  }
+  // Last 12 weekly rows as a small spark, same bar geometry as the seasonal one.
+  // Greyed out rather than hidden when stale, so the shape still reads but no
+  // bar claims to be a current warm/cool signal.
+  var wkHist = weekly.slice(-12);
+  var wkMax = Math.max(1.0, Math.max.apply(null, wkHist.map(function(h){
+                return Math.abs(h.nino34); })));
+  var wkBars = wkHist.map(function(h){
+    var hpx = Math.max(2, Math.round(Math.abs(h.nino34)/wkMax*22));
+    var col = wkStale ? '#cbd5e1'
+            : h.nino34>=THRESH ? '#dc2626'
+            : h.nino34<=-THRESH ? '#2563eb' : '#cbd5e1';
+    return '<div class="bar-cell"><div class="bar '+(h.nino34>=0?'up':'dn')
+      +'" style="height:'+hpx+'px;background:'+col+'" title="'+h.date+': '
+      +fmt(h.nino34)+'"></div></div>';
+  }).join('') + '<div class="zeroline"></div>';
+  var wkAxis = wkHist.map(function(h,i){
+    return '<span>'+(i%3===0 ? '<b>'+h.date.slice(0,5)+'</b>' : '')+'</span>';
+  }).join('');
+
   var phaseClass = 'phase-'+phase;
   var phaseLabel = phase==='warm'?tr('elnino'):phase==='cool'?tr('lanina'):tr('neutral');
   var phaseCond  = phase==='warm'?tr('elninoCond'):phase==='cool'?tr('laninaCond'):tr('neutralCond');
@@ -2131,9 +2170,12 @@ function render(roni, weekly, cachedAt, iod, mjo, mon, out){
         + '<br><span class="staledbg">'+wkDebug+'</span></div>'
       : '')
     +'<div class="row"><span class="k">'+tr('nino34')+' · '+tr('week')+' ('+wkLatest.date+')</span><span class="v '+(phaseOf(wkLatest.nino34))+'">'+fmt(wkLatest.nino34)+'°C</span></div>'
-    +'<div class="row"><span class="k">'+tr('nino34')+' · '+tr('weekAgo')+'</span><span class="v">'+fmt(wkPrev.nino34)+'°C</span></div>'
-    +'<div class="row"><span class="k">'+tr('nino3')+'</span><span class="v">'+fmt(wkLatest.nino3)+'°C</span></div>'
-    +'<div class="row"><span class="k">'+tr('nino4')+'</span><span class="v">'+fmt(wkLatest.nino4)+'°C</span></div>'
+    +'<div class="row"><span class="k">'+tr('wkChange')+'<br><span class="k-sub">'+tr('weekAgo')+' ('+wkPrev.date+') '+fmt(wkPrev.nino34)+'°C</span></span>'
+      +'<span class="v" style="color:'+wkDeltaCol+'">'+wkDeltaTxt+'</span></div>'
+    +'<div class="wktrend">'+tr('wkTrendLbl')+'</div>'
+    +'<div class="spark spark-wk">'+wkBars+'</div>'
+    +'<div class="axis-row">'+wkAxis+'</div>'
+    +'<div class="mapnote">'+tr('wkRegionsMoved')+'</div>'
   +'</div>'
 
   // ---- Monitoring-region map. Same weekly row as the card above, so the
