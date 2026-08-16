@@ -196,6 +196,11 @@
   .mapctl-sst:empty{display:none}
   .sstseek{flex:1;min-width:70px;accent-color:#0c4a6e;height:26px}
   .sstdate{margin-left:0;font-weight:600;color:#334155}
+  .mapctl-sst{flex-direction:column;align-items:stretch;gap:7px}
+  .sstlegend{display:flex;align-items:center;gap:7px;font-size:10.5px;
+    color:var(--muted);font-variant-numeric:tabular-nums}
+  .sstlegend i{flex:1;height:10px;border-radius:3px;border:1px solid var(--line)}
+  .sstnote{margin-left:0;white-space:normal;line-height:1.55}
   /* New-build bar. Fixed above everything, including the fullscreen map, so a
      deploy is never hidden behind whatever the user has open. */
   .swbar{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));
@@ -635,6 +640,7 @@ function draw(id){
   if (sstBuf){
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(sstBuf, 0, 0, V.w, V.h);
+    drawIso(ctx, V);
   }
 
   // land
@@ -870,17 +876,37 @@ function sstRow(id){
     if (s.visible) SST.setVisible(false);
     return;
   }
+  var v = s.variable, isSst = (v === 'sst');
+  function vbtn(id2, key, lbl){
+    return '<button type="button" class="mapbtn'+(v===key?' on':'')+'" '
+      +'onclick="NinoMap.SST.setVariable(\''+key+'\')">'+trFn(lbl)+'</button>';
+  }
   el.innerHTML =
-     '<button type="button" class="mapbtn'+(s.visible?' on':'')+'" '
-       +'onclick="NinoMap.SST.setVisible('+(s.visible?'false':'true')+')">'
-       + trFn('sstLayer')+'</button>'
+     '<div class="mapctl">'
+       +'<button type="button" class="mapbtn'+(s.visible?' on':'')+'" '
+         +'onclick="NinoMap.SST.setVisible('+(s.visible?'false':'true')+')">'
+         + trFn('sstLayer')+'</button>'
+       + (s.visible ? vbtn(id,'anom','sstVarAnom') + vbtn(id,'sst','sstVarSst') : '')
+       + (s.visible ? '' : '<span class="mapread">'+trFn('sstHint')+'</span>')
+     +'</div>'
    + (s.visible
-      ? '<button type="button" class="mapbtn zbtn" style="min-width:38px" '
-          +'onclick="NinoMap.SST.toggle()">'+(s.playing?'\u2758\u2758':'\u25b6')+'</button>'
-        +'<input type="range" class="sstseek" min="0" max="'+(s.n-1)+'" value="'+s.i+'" '
-          +'oninput="NinoMap.SST.seek(this.value)">'
-        +'<span class="mapread sstdate">'+(s.date||'')+'</span>'
-      : '<span class="mapread">'+trFn('sstHint')+'</span>');
+      ? '<div class="mapctl">'
+          +'<button type="button" class="mapbtn zbtn" style="min-width:38px" '
+            +'onclick="NinoMap.SST.toggle()">'+(s.playing?'\u2758\u2758':'\u25b6')+'</button>'
+          +'<input type="range" class="sstseek" min="0" max="'+(s.n-1)+'" value="'+s.i+'" '
+            +'oninput="NinoMap.SST.seek(this.value)">'
+          +'<span class="mapread sstdate">'+(s.date||'')+'</span>'
+        +'</div>'
+        // Absolute temperature needs a scale; the anomaly ramp is
+        // self-explanatory but gets one too, for consistency.
+        +'<div class="sstlegend">'
+          +'<span>'+(isSst ? '16\u00b0' : '\u22123.0')+'</span>'
+          +'<i style="background:'+SST.rampCss(v)+'"></i>'
+          +'<span>'+(isSst ? '32\u00b0C' : '+3.0')+'</span>'
+        +'</div>'
+        +'<div class="mapread sstnote">'
+          + trFn(isSst ? 'sstNoteSst' : 'sstNoteAnom') +'</div>'
+      : '');
 }
 
 // The card's map is a PREVIEW: drawn with live tints, but it registers no
@@ -1051,20 +1077,60 @@ function sample(F, lon, lat){
   return ((a*(1-tx) + b*tx)*(1-ty) + (c*(1-tx) + d*tx)*ty) / F.scale;
 }
 
-/* ---- anomaly -> colour. Diverging, white at zero, saturating at +/-3. ---- */
-var RAMP = null;
-function buildRamp(){
-  RAMP = new Uint8Array(512 * 3);
-  for (var i = 0; i < 512; i++){
-    var t = (i / 511) * 2 - 1, r, g, b, u = Math.abs(t);
+/* ---- colour ramps -------------------------------------------------------
+   Two variables, two fundamentally different scales.
+
+   anom: DIVERGING, white at zero, saturating at +/-3. Zero is meaningful, and
+         the sign is the whole message.
+
+   sst:  SEQUENTIAL over 16-32degC. A diverging ramp is meaningless here --
+         absolute tropical SST never goes near zero, so the anomaly ramp mapped
+         every real value (18, 24, 28, 31) to the same saturated red. The
+         ocean came out as one flat slab.
+   -------------------------------------------------------------------------- */
+var SST_MIN = 16, SST_MAX = 32;      // sequential domain, degC
+var ANOM_MAX = 3;                    // diverging domain, +/- degC
+var SST_STOPS = [                    // perceptually ordered, cold -> hot
+  [16, 12, 44,132], [20, 34, 94,168], [24, 65,182,196], [26,127,205,187],
+  [28,199,233,180], [29,254,224,139], [30,253,141, 60], [32,177, 0, 38]
+];
+var RAMPS = null;
+function buildRamps(){
+  var i, t, u, r, g, b, a = new Uint8Array(512*3), s = new Uint8Array(512*3), k, s0, s1, f;
+  for (i = 0; i < 512; i++){
+    t = (i/511)*2 - 1; u = Math.abs(t);
     if (t >= 0){ r = 255; g = Math.round(255 - 200*u); b = Math.round(255 - 215*u); }
     else       { r = Math.round(255 - 205*u); g = Math.round(255 - 130*u); b = 255; }
-    RAMP[i*3] = r; RAMP[i*3+1] = g; RAMP[i*3+2] = b;
+    a[i*3] = r; a[i*3+1] = g; a[i*3+2] = b;
+
+    var deg = SST_MIN + (i/511)*(SST_MAX - SST_MIN);
+    for (k = 0; k < SST_STOPS.length - 1 && SST_STOPS[k+1][0] < deg; k++){}
+    s0 = SST_STOPS[k]; s1 = SST_STOPS[Math.min(k+1, SST_STOPS.length-1)];
+    f = (s1[0] === s0[0]) ? 0 : (deg - s0[0]) / (s1[0] - s0[0]);
+    if (f < 0) f = 0; if (f > 1) f = 1;
+    s[i*3]   = Math.round(s0[1] + (s1[1]-s0[1])*f);
+    s[i*3+1] = Math.round(s0[2] + (s1[2]-s0[2])*f);
+    s[i*3+2] = Math.round(s0[3] + (s1[3]-s0[3])*f);
   }
+  RAMPS = { anom:a, sst:s };
 }
-function rampIdx(v){
-  var t = v / 3; if (t < -1) t = -1; if (t > 1) t = 1;
-  return ((t + 1) / 2 * 511) | 0;
+function rampIdx(v, mode){
+  var t;
+  if (mode === 'sst') t = (v - SST_MIN) / (SST_MAX - SST_MIN);
+  else                t = (v / ANOM_MAX + 1) / 2;
+  if (t < 0) t = 0; if (t > 1) t = 1;
+  return (t * 511) | 0;
+}
+// CSS gradient for the legend, straight off the same LUT, so the bar can never
+// disagree with the pixels.
+function rampCss(mode){
+  if (!RAMPS) buildRamps();
+  var R = RAMPS[mode] || RAMPS.anom, out = [], i, k;
+  for (i = 0; i <= 10; i++){
+    k = Math.round(i/10*511)*3;
+    out.push('rgb('+R[k]+','+R[k+1]+','+R[k+2]+') '+(i*10)+'%');
+  }
+  return 'linear-gradient(90deg,'+out.join(',')+')';
 }
 
 /* ---- the expensive part, done once per view ---- */
@@ -1093,7 +1159,9 @@ function paint(V, PROJ, unrot, latOf){
   if (!visible || !order.length) return null;
   var F = frames[order[idx]];
   if (!F) return null;
-  if (!RAMP) buildRamp();
+  if (!RAMPS) buildRamps();
+  var mode = (F.variable === 'sst') ? 'sst' : 'anom';
+  var RAMP = RAMPS[mode];
 
   var k = viewKey(V);
   if (k !== invKey){ buildInverse(V, PROJ, unrot, latOf); invKey = k; }
@@ -1112,7 +1180,7 @@ function paint(V, PROJ, unrot, latOf){
     lat = invLL[i*2+1];
     v = sample(F, lon, lat);
     if (v !== v) continue;                           // NaN: land or gap
-    ri = rampIdx(v) * 3;
+    ri = rampIdx(v, mode) * 3;
     d[i*4]   = RAMP[ri];
     d[i*4+1] = RAMP[ri+1];
     d[i*4+2] = RAMP[ri+2];
@@ -1120,6 +1188,54 @@ function paint(V, PROJ, unrot, latOf){
   }
   bctx.putImageData(img, 0, 0);
   return buf;
+}
+
+/* ---- the 28degC isotherm --------------------------------------------------
+   The edge of the Indo-Pacific warm pool, and the single most legible thing in
+   an SST map: during El Nino it marches east across the basin. Marching
+   squares over the grid, emitted in lon/lat so the caller can project it --
+   drawn as a real line rather than left to a colour boundary, which no ramp
+   renders crisply. Cells touching land are skipped: an isotherm interpolated
+   against a fill value is fiction.
+   -------------------------------------------------------------------------- */
+var ISO_LEVEL = 28;
+function isotherm(F, level){
+  var segs = [], iy, ix, f = F.fill, g = F.g, n = F.nlon;
+  function P(x0,y0,v0, x1,y1,v1){
+    var t = (level - v0) / (v1 - v0);
+    return [F.lon0 + (x0 + (x1-x0)*t)*F.step, F.lat0 + (y0 + (y1-y0)*t)*F.step];
+  }
+  for (iy = 0; iy < F.nlat-1; iy++){
+    for (ix = 0; ix < n-1; ix++){
+      var a = g[iy*n+ix], b = g[iy*n+ix+1], c = g[(iy+1)*n+ix+1], d = g[(iy+1)*n+ix];
+      if (a===f || b===f || c===f || d===f) continue;
+      a/=F.scale; b/=F.scale; c/=F.scale; d/=F.scale;
+      var code = (a>level?1:0) | (b>level?2:0) | (c>level?4:0) | (d>level?8:0);
+      if (code === 0 || code === 15) continue;
+      var L = P(ix,iy,a, ix,iy+1,d),      // left   edge
+          R = P(ix+1,iy,b, ix+1,iy+1,c),  // right  edge
+          T = P(ix,iy,a, ix+1,iy,b),      // top    edge
+          B = P(ix,iy+1,d, ix+1,iy+1,c);  // bottom edge
+      switch(code){
+        case 1: case 14: segs.push([T,L]); break;
+        case 2: case 13: segs.push([T,R]); break;
+        case 3: case 12: segs.push([L,R]); break;
+        case 4: case 11: segs.push([B,R]); break;
+        case 6: case  9: segs.push([T,B]); break;
+        case 7: case  8: segs.push([L,B]); break;
+        // saddles: emit both branches rather than guessing which way it joins
+        case 5:  segs.push([T,L]); segs.push([B,R]); break;
+        case 10: segs.push([T,R]); segs.push([L,B]); break;
+      }
+    }
+  }
+  return segs;
+}
+function isoSegments(){
+  if (!visible || !order.length) return null;
+  var F = frames[order[idx]];
+  if (!F || F.variable !== 'sst') return null;   // meaningless on an anomaly field
+  return isotherm(F, ISO_LEVEL);
 }
 
 /* ---- playback ---- */
@@ -1141,7 +1257,8 @@ function state(){
   var F = order.length ? frames[order[idx]] : null;
   return { visible:visible, playing:playing, i:idx, n:order.length,
            date:order[idx] || null, newest:order[order.length-1] || null,
-           variable:F ? F.variable : null, source:F ? F.source : null };
+           variable:variable, frameVar:F ? F.variable : null,
+           source:F ? F.source : null };
 }
 // Age is judged on the NEWEST frame we hold, not on the one being displayed --
 // a paused time-lapse sitting on frame 3 of 12 is not evidence of anything.
@@ -1152,9 +1269,27 @@ function ageDays(){
 }
 function reset(){ frames = {}; order = []; idx = 0; stop(); invKey=''; }
 
+// Frames are keyed by DATE alone, so anom and sst slices for the same day
+// would overwrite each other and leave the field half one variable and half
+// the other. Switching variable therefore clears the store and asks the host
+// to refetch.
+var variable = 'anom', needFrames = function(){};
+function setVariable(v){
+  v = (v === 'sst') ? 'sst' : 'anom';
+  if (v === variable) return;
+  variable = v; reset(); visible = true;
+  onChange();
+  needFrames(v);
+}
+function getVariable(){ return variable; }
+
 return { addFrame:addFrame, paint:paint, play:play, stop:stop, toggle:toggle,
          seek:seek, setVisible:setVisible, state:state, ageDays:ageDays,
          reset:reset, onChange:function(f){ onChange = f; },
+         setVariable:setVariable, getVariable:getVariable,
+         onNeedFrames:function(f){ needFrames = f; },
+         isoSegments:isoSegments, rampCss:rampCss, isoLevel:ISO_LEVEL,
+         _isotherm:isotherm, _ramps:function(){ if(!RAMPS) buildRamps(); return RAMPS; },
          _sample:sample, _rampIdx:rampIdx, _frames:function(){ return frames; },
          _invSize:function(){ return [invW, invH]; } };
 })();
@@ -1171,6 +1306,30 @@ SST.onChange(function(){
 // The SST layer needs the same projection maths; hand it the internals rather
 // than letting it re-derive them.
 function paintSst(V){ return SST.paint(V, PROJ, unrot, latOf); }
+
+// The 28degC isotherm, projected as a real polyline. Segments are independent,
+// so each is drawn on its own -- and any segment straddling the seam in the
+// rotated frame is dropped rather than drawn straight across the map, the same
+// hazard the polygon clipper exists for.
+function drawIso(ctx, V){
+  var segs = SST.isoSegments();
+  if (!segs || !segs.length) return;
+  var i, s, a, b, ra, rb;
+  ctx.beginPath();
+  for (i = 0; i < segs.length; i++){
+    s = segs[i];
+    ra = rot(s[0][0], s[0][1], V.rot[0], latOf(V));
+    rb = rot(s[1][0], s[1][1], V.rot[0], latOf(V));
+    if (Math.abs(ra[0] - rb[0]) > 180) continue;
+    a = PROJ[V.proj].fwd(ra[0], ra[1]);
+    b = PROJ[V.proj].fwd(rb[0], rb[1]);
+    if (!a || !b) continue;
+    ctx.moveTo(V.cx + a[0]*V.R, V.cy + a[1]*V.R);
+    ctx.lineTo(V.cx + b[0]*V.R, V.cy + b[1]*V.R);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 2.6; ctx.stroke();
+  ctx.strokeStyle = '#7f1d1d';               ctx.lineWidth = 1.2; ctx.stroke();
+}
 
 
 /* ==========================================================================
@@ -1459,6 +1618,12 @@ var T = {
   sstHint:    {zh:'叠加 NOAA OISST 海面温度距平场，可播放近 12 周变化',
                en:'Overlay the NOAA OISST sea-surface temperature anomaly field; play the last 12 weeks'},
   sstStale:   {zh:'⚠️ 海温场数据过期，暂不显示。', en:'⚠️ The SST field is out of date and is withheld.'},
+  sstVarAnom: {zh:'距平', en:'Anomaly'},
+  sstVarSst:  {zh:'实测海温', en:'Actual SST'},
+  sstNoteAnom:{zh:'距平＝比 1971–2000 年同期平均高多少。注意：本图的气候基准是 1971–2000，而上方 Niño 指数用的是 1991–2020，所以本图颜色会略偏暖 —— 看形状与走向，不要拿来读数值。',
+               en:'Anomaly = departure from the 1971–2000 average. Note this field uses a 1971–2000 baseline while the Niño indices above use 1991–2020, so it reads slightly warmer. Read the shape, not the numbers.'},
+  sstNoteSst: {zh:'实测海面温度。白线为 28°C 等温线 —— 暖池的边界。厄尔尼诺发展时它会一路向东推进；这条线的位置比颜色更能说明问题。',
+               en:'Actual sea-surface temperature. The white line is the 28°C isotherm — the edge of the warm pool. As El Niño develops it marches east; the line’s position tells you more than the colours do.'},
   // --- hero: the lag, and the direction of travel ---
   heroLag:    {zh:'RONI 是三个月平均值，上面这个数字描述的是 {s}，比今天落后约 6 周。事件正在发展时，它一定会低估当下。最新一周的 Niño 3.4 见下方。',
                en:'RONI is a three-month mean, so the number above describes {s} — roughly six weeks behind today. While an event is developing it will always understate the present. The latest weekly Niño 3.4 is below.'},
@@ -3041,11 +3206,13 @@ window.addEventListener('load', boot);
 // 12 weeks matches the weekly Nino 3.4 card, so the field and the numbers are
 // telling the same story over the same window.
 var SST_WEEKS = 12;
-function sstLoad(){
+function sstLoad(varName){
   if (typeof NinoMap === 'undefined' || !NinoMap.SST) return;
-  getFeed('sst&date=last').then(function(txt){
+  var v = (varName === 'sst') ? 'sst' : 'anom';
+  getFeed('sst&var=' + v + '&date=last').then(function(txt){
     var o = JSON.parse(txt);
     if (!o || o.ok !== true) return;
+    if (o.variable !== NinoMap.SST.getVariable()) return;
     NinoMap.SST.addFrame(o);
     NinoMap.sstRow('full');
     // Walk back from the date the SERVER gave us, not from today's date --
@@ -3054,13 +3221,22 @@ function sstLoad(){
     var base = Date.parse(o.date + 'T12:00:00Z'), i;
     for (i = 1; i < SST_WEEKS; i++){
       (function(d){
-        getFeed('sst&date=' + d).then(function(t2){
+        getFeed('sst&var=' + v + '&date=' + d).then(function(t2){
           var f = JSON.parse(t2);
-          if (f && f.ok === true) { NinoMap.SST.addFrame(f); NinoMap.sstRow('full'); }
+          // A late reply for a variable the user has since switched away from
+          // must be dropped, or it lands in the cleared store and the field
+          // ends up half anomaly and half absolute temperature.
+          if (f && f.ok === true && f.variable === NinoMap.SST.getVariable()) {
+            NinoMap.SST.addFrame(f); NinoMap.sstRow('full');
+          }
         }).catch(function(){});
       })(new Date(base - i*7*864e5).toISOString().slice(0,10));
     }
   }).catch(function(){ /* no field today; the boxes still work */ });
+}
+// Switching variable clears the frame store, so the layer asks us to refill it.
+if (typeof NinoMap !== 'undefined' && NinoMap.SST) {
+  NinoMap.SST.onNeedFrames(function(v){ sstLoad(v); });
 }
 
 // ---- Service worker: register, and actively WATCH for a new build --------
