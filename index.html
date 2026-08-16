@@ -157,9 +157,64 @@
      horizontal drag is what rotates the map. */
   .ninocanvas{display:block;width:100%;border-radius:8px;background:#f8fafc;
     touch-action:pan-y}
-  .mapfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:7px}
+  .mapfoot{display:flex;flex-direction:column;gap:7px;margin-top:7px}
   .mapctl{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+  .mapctl-z{gap:10px}
   .mapgap{width:6px}
+  /* One segmented control, nowrap: the -/+ pair must never be split across
+     lines, and each half needs a thumb-sized target. */
+  .mapzoom{display:inline-flex;flex-wrap:nowrap;align-items:stretch;flex-shrink:0;
+    border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#f1f5f9}
+  .mapzoom .zbtn{border:0;border-radius:0;background:transparent;color:#334155;
+    min-width:44px;min-height:34px;padding:0 12px;font-size:17px;font-weight:600;
+    line-height:1;display:flex;align-items:center;justify-content:center}
+  .mapzoom .zbtn:active{background:#dbe3ea}
+  /* The card's map is a preview button. No touch-action override anywhere on
+     it, so the page scrolls over it like it would over an image. */
+  .nmapopen{display:block;width:100%;padding:0;border:0;background:transparent;
+    cursor:pointer;position:relative;border-radius:8px;overflow:hidden}
+  .nmapcue{position:absolute;right:8px;bottom:8px;font-size:11.5px;font-weight:600;
+    line-height:1;padding:6px 10px;border-radius:999px;pointer-events:none;
+    background:rgba(12,74,110,.88);color:#fff;box-shadow:0 1px 6px rgba(12,74,110,.3)}
+  /* Fullscreen map. Here touch-action:none is simply correct -- there is
+     nothing behind it that wants the gesture. */
+  .nmapfull{position:fixed;inset:0;z-index:240;background:var(--card);
+    display:none;flex-direction:column}
+  .nmapfull.show{display:flex}
+  .nmapfull-head{display:flex;align-items:center;justify-content:space-between;
+    gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);
+    font-size:15px;font-weight:700;color:#0c4a6e;flex-shrink:0;
+    padding-top:calc(12px + env(safe-area-inset-top))}
+  .nmapfull-canvas{flex:1 1 auto;min-height:0;position:relative;background:#f8fafc}
+  .nmapfull-canvas .ninocanvas{width:100%;height:100%;border-radius:0;
+    touch-action:none}
+  .nmapfull-ctl{flex-shrink:0;padding:10px 14px;border-top:1px solid var(--line);
+    display:flex;flex-direction:column;gap:8px;
+    padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  body.nmap-locked{overflow:hidden}
+  .mapctl-sst{gap:8px}
+  .mapctl-sst:empty{display:none}
+  .sstseek{flex:1;min-width:70px;accent-color:#0c4a6e;height:26px}
+  .sstdate{margin-left:0;font-weight:600;color:#334155}
+  /* New-build bar. Fixed above everything, including the fullscreen map, so a
+     deploy is never hidden behind whatever the user has open. */
+  .swbar{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));
+    z-index:300;display:flex;align-items:center;gap:10px;
+    background:#0c4a6e;color:#fff;border-radius:12px;padding:11px 12px 11px 15px;
+    box-shadow:0 4px 18px rgba(15,23,42,.28);font-size:13.5px;font-weight:600;
+    max-width:560px;margin:0 auto}
+  .swbar span{flex:1}
+  .swbar button{font:inherit;font-size:13px;font-weight:700;cursor:pointer;
+    background:#fff;color:#0c4a6e;border:0;border-radius:8px;padding:8px 13px;
+    min-height:34px;flex-shrink:0}
+  .swbar button:disabled{opacity:.6}
+  .swver{font-variant-numeric:tabular-nums;opacity:.75}
+  /* While rotation is armed the canvas is visibly different -- otherwise the
+     page not scrolling looks like the app has frozen. */
+  .mapzoom .zlvl{display:flex;align-items:center;justify-content:center;
+    min-width:46px;padding:0 6px;background:#fff;font-size:11.5px;color:var(--muted);
+    font-variant-numeric:tabular-nums;
+    border-left:1px solid var(--line);border-right:1px solid var(--line)}
   .mapbtn{font:inherit;font-size:11.5px;line-height:1;padding:5px 8px;cursor:pointer;
     background:#f1f5f9;color:#334155;border:1px solid var(--line);border-radius:7px}
   .mapbtn.on{background:#0c4a6e;border-color:#0c4a6e;color:#fff}
@@ -360,7 +415,14 @@ var PROJ = {
     fwd: function(l,p){ return [l*D, -p*D]; },
     inv: function(x,y){ var l=x/D, p=-y/D;
       if (Math.abs(l)>180 || Math.abs(p)>90) return null; return [l,p]; },
-    ext: [2*Math.PI, Math.PI], sphere: false
+    ext: [2*Math.PI, Math.PI], sphere: false,
+    // A plain lon/lat grid, so it can sit flush against the canvas edges with
+    // no inset: 180degW at x=0, 180degE at x=w.
+    fillWidth: true,
+    // ...and it is the one projection where an oblique rotation is useless --
+    // tilting fans the graticule out and it stops reading as a world map.
+    // Longitude only here; O and W3 still tilt on both axes.
+    lonOnly: true
   },
   winkel: {
     fwd: function(l,p){ l*=D; p*=D;
@@ -494,11 +556,23 @@ var langFn = function(){ return 'zh'; };
 
 function inst(id){
   if (!INST[id]) INST[id] = { proj:'ortho', rot:[140,0], scale:1,
-                              w:0, h:0, cx:0, cy:0, R:0, drag:null };
+                              w:0, h:0, cx:0, cy:0, R:0, drag:null,
+                              rotate:false };
   return INST[id];
 }
+// The EFFECTIVE latitude rotation. Read through this everywhere -- never
+// V.rot[1] directly.
+//
+// A lon-only projection must be guaranteed flat no matter which setter last
+// touched the state. Zeroing rot[1] in setProj was not enough: setView('my')
+// sets [-108,-2], so choosing Malaysia after switching to E re-introduced a 2
+// degree tilt, which in equirectangular bends the equator into a shallow sine
+// wave about 4px deep. Gating at the point of USE means no setter can leak a
+// tilt in, and the tilt is still remembered for O and W3 when you switch back.
+function latOf(V){ return PROJ[V.proj].lonOnly ? 0 : V.rot[1]; }
+
 function project(V, lon, lat){
-  var r = rot(lon,lat,V.rot[0],V.rot[1]);
+  var r = rot(lon,lat,V.rot[0],latOf(V));
   var q = PROJ[V.proj].fwd(r[0], r[1]);
   if (!q) return null;
   return [V.cx+q[0]*V.R, V.cy+q[1]*V.R];
@@ -506,7 +580,7 @@ function project(V, lon, lat){
 
 function trace(V, ctx, ring, open){
   var P=PROJ[V.proj], i, l, p, q, x, y, started=false, prev=null, pieces, piece, j;
-  var r = ring.map(function(pt){ return rot(pt[0],pt[1],V.rot[0],V.rot[1]); });
+  var r = ring.map(function(pt){ return rot(pt[0],pt[1],V.rot[0],latOf(V)); });
   if (open){                            // polylines: break, never close
     for (i=0;i<r.length;i++){
       l=r[i][0]; p=r[i][1];
@@ -542,7 +616,9 @@ function draw(id){
   if (P.sphere) ctx.arc(V.cx,V.cy,V.R,0,7);
   else { e=P.ext; ctx.rect(V.cx-e[0]/2*V.R, V.cy-e[1]/2*V.R, e[0]*V.R, e[1]*V.R); }
   ctx.fillStyle='#e0f2fe'; ctx.fill();
-  ctx.strokeStyle='#7dd3fc'; ctx.lineWidth=1; ctx.stroke();
+  // A border drawn flush with the canvas edge is half-clipped and reads as a
+  // rendering artefact, so the edge-to-edge projection goes without one.
+  if (!P.fillWidth){ ctx.strokeStyle='#7dd3fc'; ctx.lineWidth=1; ctx.stroke(); }
   ctx.save(); ctx.clip();
 
   // graticule
@@ -552,6 +628,14 @@ function draw(id){
   for (i=-60;i<=60;i+=30){ (function(la){ var g=[],lo;
     for (lo=-180;lo<=180;lo+=4) g.push([lo,la]); trace(V,ctx,g,true); })(i); }
   ctx.strokeStyle='rgba(2,132,199,.18)'; ctx.lineWidth=1; ctx.stroke();
+
+  // SST anomaly field, between the ocean and the coastlines: the land polygons
+  // paint over its edges, which hides the 1.5deg stair-stepping at coastlines.
+  var sstBuf = paintSst(V);
+  if (sstBuf){
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(sstBuf, 0, 0, V.w, V.h);
+  }
 
   // land
   ctx.beginPath();
@@ -648,16 +732,21 @@ function sizeTo(id){
   var V=inst(id), cv=document.getElementById('nmap-'+id);
   if (!cv || !cv.parentElement) return;
   var w=cv.parentElement.clientWidth || 320;
-  // Winkel/equirect need h >= ~0.61*w to fill the width instead of leaving
-  // big side margins; cap high enough that a wide desktop card still does.
-  var h=Math.round(clamp(w*0.62, 200, 420));
+  // Fullscreen fills whatever height its container gives it. The preview
+  // derives one from its width: Winkel/equirect need h >= ~0.61*w to fill the
+  // width instead of leaving big side margins.
+  var h=(id==='full' && cv.parentElement.clientHeight)
+        ? cv.parentElement.clientHeight
+        : Math.round(clamp(w*0.62, 200, 420));
   var dpr=Math.min(window.devicePixelRatio||1, 2);
   cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
   cv.style.width='100%'; cv.style.height=h+'px';
   cv.getContext('2d').setTransform(dpr,0,0,dpr,0,0);
   V.w=w; V.h=h; V.cx=w/2; V.cy=h/2;
   var e=PROJ[V.proj].ext;
-  V.R=Math.min((w-12)/e[0], (h-12)/e[1]) * V.scale;   // fitExtent equivalent
+  V.R = PROJ[V.proj].fillWidth
+      ? (w/e[0]) * V.scale                              // flush to both edges
+      : Math.min((w-12)/e[0], (h-12)/e[1]) * V.scale;   // fitExtent equivalent
   draw(id);
 }
 
@@ -669,6 +758,11 @@ function bind(id){
     var b=cv.getBoundingClientRect();
     return [ev.clientX-b.left, ev.clientY-b.top];
   }
+  // A mouse never competes with page scrolling, so it always drags. A finger
+  // only drags once rotation is switched on; otherwise we ignore it completely
+  // and leave the gesture to the browser's scroller.
+  // Only the fullscreen instance is ever bound, so gestures are unconditional.
+  function touchBlocked(){ return false; }
   cv.addEventListener('pointerdown', function(ev){
     V.drag=pos(ev); cv.setPointerCapture(ev.pointerId); cv.style.cursor='grabbing';
   });
@@ -681,12 +775,15 @@ function bind(id){
       ev.preventDefault();
       k=90/V.R;
       V.rot[0]=wrap180(V.rot[0]+(p[0]-V.drag[0])*k);
-      if (V.proj==='ortho') V.rot[1]=clamp(V.rot[1]-(p[1]-V.drag[1])*k,-89,89);
+      // Tilt on the globe and on Winkel, which both hold up obliquely.
+      // Equirectangular opts out via lonOnly -- see PROJ.equi.
+      if (!PROJ[V.proj].lonOnly)
+        V.rot[1]=clamp(V.rot[1]-(p[1]-V.drag[1])*k,-89,89);
       V.drag=p; draw(id);
     }
     if (out){
       c=PROJ[V.proj].inv((p[0]-V.cx)/V.R, (p[1]-V.cy)/V.R);
-      if (c) c=unrot(c[0],c[1],V.rot[0],V.rot[1]);
+      if (c) c=unrot(c[0],c[1],V.rot[0],latOf(V));
       out.textContent = c
         ? (Math.abs(c[1]).toFixed(1)+'\u00B0'+(c[1]<0?'S':'N')+'  '
          + Math.abs(c[0]).toFixed(1)+'\u00B0'+(c[0]<0?'W':'E'))
@@ -702,7 +799,9 @@ function bind(id){
 
   // Pinch zoom (touch). Two active pointers -> track the distance between them.
   var pts = {}, pinch0 = 0, scale0 = 1;
-  cv.addEventListener('pointerdown', function(ev){ pts[ev.pointerId]=[ev.clientX,ev.clientY];
+  cv.addEventListener('pointerdown', function(ev){
+    if (touchBlocked(ev)) return;
+    pts[ev.pointerId]=[ev.clientX,ev.clientY];
     var k=Object.keys(pts);
     if (k.length===2){ V.drag=null; pinch0=dist(pts[k[0]],pts[k[1]]); scale0=V.scale; }
   });
@@ -731,38 +830,123 @@ function bind(id){
 function dist(a,b){ var dx=a[0]-b[0], dy=a[1]-b[1]; return Math.sqrt(dx*dx+dy*dy); }
 
 /* ---------- public ---------- */
-function markup(id){
+function ctlRow(id){
   function btn(k, lbl, act, on){
     return '<button type="button" class="mapbtn'+(on?' on':'')+'" data-'+k+'="'+act+'" '
       + 'onclick="NinoMap.'+(k==='proj'?'setProj':'setView')+"('"+id+"','"+act+"')"+'">'
       + lbl+'</button>';
   }
-  return ''
-   +'<div class="nmap" id="nmapbox-'+id+'">'
-     +'<canvas id="nmap-'+id+'" class="ninocanvas"></canvas>'
-     +'<div class="mapfoot">'
-       +'<div class="mapctl" id="nctl-'+id+'">'
-         + btn('proj','O','ortho',true) + btn('proj','E','equi') + btn('proj','W3','winkel')
-         +'<span class="mapgap"></span>'
-         + btn('view', trFn('mapViewPac'), 'pac', true)
-         + btn('view', trFn('mapViewMY'),  'my')
-         +'<span class="mapgap"></span>'
-         +'<button type="button" class="mapbtn zoom" data-zoom="-1" aria-label="'
-           + trFn('mapZoomOut') + '" onclick="NinoMap.zoom(\''+id+'\',-1)">\u2212</button>'
-         +'<button type="button" class="mapbtn zoom" data-zoom="1" aria-label="'
-           + trFn('mapZoomIn') + '" onclick="NinoMap.zoom(\''+id+'\',1)">+</button>'
-       +'</div>'
-       +'<div class="mapread" id="nread-'+id+'">'+trFn('mapDragHint')+'</div>'
+  return '<div class="mapctl" id="nctl-'+id+'">'
+       + btn('proj','O','ortho',true) + btn('proj','E','equi') + btn('proj','W3','winkel')
+       +'<span class="mapgap"></span>'
+       + btn('view', trFn('mapViewPac'), 'pac', true)
+       + btn('view', trFn('mapViewMY'),  'my')
      +'</div>'
+     +'<div class="mapctl mapctl-z">'
+       +'<span class="mapzoom">'
+         +'<button type="button" class="mapbtn zbtn" data-zoom="-1" aria-label="'
+           + trFn('mapZoomOut') + '" onclick="NinoMap.zoom(\''+id+'\',-1)">\u2212</button>'
+         +'<span class="zlvl" id="nzoom-'+id+'" aria-hidden="true">1.0\u00d7</span>'
+         +'<button type="button" class="mapbtn zbtn" data-zoom="1" aria-label="'
+           + trFn('mapZoomIn') + '" onclick="NinoMap.zoom(\''+id+'\',1)">+</button>'
+       +'</span>'
+       +'<span class="mapread" id="nread-'+id+'">'+trFn('mapDragHint')+'</span>'
+     +'</div>'
+     +'<div class="mapctl mapctl-sst" id="nsst-'+id+'"></div>';
+}
+
+var SST_MAX_AGE_DAYS = 10;
+// SST controls render only when there is something to control -- an empty
+// player would imply data that has not arrived, or a feed that failed.
+function sstRow(id){
+  var el = document.getElementById('nsst-'+id);
+  if (!el) return;
+  var s = SST.state(), age = SST.ageDays();
+  if (!s.n){ el.innerHTML = ''; return; }
+  // Same rule as every other feed here: too old and it is withheld rather
+  // than shown as though it were now.
+  if (age !== null && age > SST_MAX_AGE_DAYS){
+    el.innerHTML = '<span class="mapread">'+trFn('sstStale')+'</span>';
+    if (s.visible) SST.setVisible(false);
+    return;
+  }
+  el.innerHTML =
+     '<button type="button" class="mapbtn'+(s.visible?' on':'')+'" '
+       +'onclick="NinoMap.SST.setVisible('+(s.visible?'false':'true')+')">'
+       + trFn('sstLayer')+'</button>'
+   + (s.visible
+      ? '<button type="button" class="mapbtn zbtn" style="min-width:38px" '
+          +'onclick="NinoMap.SST.toggle()">'+(s.playing?'\u2758\u2758':'\u25b6')+'</button>'
+        +'<input type="range" class="sstseek" min="0" max="'+(s.n-1)+'" value="'+s.i+'" '
+          +'oninput="NinoMap.SST.seek(this.value)">'
+        +'<span class="mapread sstdate">'+(s.date||'')+'</span>'
+      : '<span class="mapread">'+trFn('sstHint')+'</span>');
+}
+
+// The card's map is a PREVIEW: drawn with live tints, but it registers no
+// listeners and sets no touch-action, so the page scrolls over it exactly as it
+// would over a photo. The whole thing is one button that opens the real map.
+function markup(id){
+  return '<div class="nmap" id="nmapbox-'+id+'">'
+     +'<button type="button" class="nmapopen" onclick="NinoMap.openFull(\''+id+'\')">'
+       +'<canvas id="nmap-'+id+'" class="ninocanvas"></canvas>'
+       +'<span class="nmapcue">'+trFn('mapOpen')+'</span>'
+     +'</button>'
    +'</div>';
 }
+
 function mount(id){
   if (!document.getElementById('nmap-'+id)) return;
-  bind(id); sizeTo(id); syncZoom(id);
+  sizeTo(id); syncZoom(id);       // previews are drawn, never bound
+}
+
+// ---- fullscreen ----------------------------------------------------------
+// Its own instance in its own overlay. Nothing behind it wants to scroll, so it
+// takes every gesture without arbitration: drag on both axes, pinch, wheel.
+var FULL_FROM = null;
+function openFull(fromId){
+  var ov=document.getElementById('nmapfull'), V, F, b, i;
+  if (!ov) return;
+  FULL_FROM = fromId;
+  V=inst(fromId); F=inst('full');
+  F.proj=V.proj; F.rot=[V.rot[0],V.rot[1]]; F.scale=V.scale;   // open where they were
+  ov.querySelector('.nmapfull-ctl').innerHTML = ctlRow('full');
+  ov.classList.add('show');
+  if (document.body.classList) document.body.classList.add('nmap-locked');
+  b=ov.querySelectorAll('[data-proj]');
+  for (i=0;i<b.length;i++) b[i].classList.toggle('on', b[i].getAttribute('data-proj')===F.proj);
+  b=ov.querySelectorAll('[data-view]');
+  for (i=0;i<b.length;i++) b[i].classList.remove('on');
+  // Measure after the overlay is visible, or the canvas sizes to zero.
+  requestAnimationFrame(function(){
+    bind('full'); sizeTo('full'); syncZoom('full'); sstRow('full');
+  });
+}
+function closeFull(){
+  var ov=document.getElementById('nmapfull'), V, F;
+  if (!ov) return;
+  ov.classList.remove('show');
+  if (document.body.classList) document.body.classList.remove('nmap-locked');
+  if (FULL_FROM && INST[FULL_FROM]){       // carry the view back to the card
+    F=inst('full'); V=inst(FULL_FROM);
+    V.proj=F.proj; V.rot=[F.rot[0],F.rot[1]]; V.scale=F.scale;
+    sizeTo(FULL_FROM);
+  }
+  FULL_FROM=null;
+}
+function fullShell(){
+  return '<div class="nmapfull" id="nmapfull">'
+     +'<div class="nmapfull-head">'
+       +'<span>'+trFn('mapCardTitle')+'</span>'
+       +'<button type="button" class="help-x" onclick="NinoMap.closeFull()" aria-label="close">\u2715</button>'
+     +'</div>'
+     +'<div class="nmapfull-canvas"><canvas id="nmap-full" class="ninocanvas"></canvas></div>'
+     +'<div class="nmapfull-ctl"></div>'
+   +'</div>';
 }
 function setProj(id, p){
   var V=inst(id), box=document.getElementById('nctl-'+id), b, i;
-  V.proj=p; if (p!=='ortho') V.rot[1]=0;
+  V.proj=p;   // tilt is remembered; latOf() decides whether it is applied
   if (box){ b=box.querySelectorAll('[data-proj]');
     for (i=0;i<b.length;i++) b[i].classList.toggle('on', b[i].getAttribute('data-proj')===p); }
   sizeTo(id);
@@ -775,6 +959,18 @@ function setView(id, v){
     for (i=0;i<b.length;i++) b[i].classList.toggle('on', b[i].getAttribute('data-view')===v); }
   sizeTo(id); syncZoom(id);
 }
+// Interaction model
+// -----------------
+// An inline canvas inside a scrolling list cannot both rotate under a finger
+// and let the page scroll under the same finger: touch-action has to pick one.
+// Every attempt to arbitrate that at gesture level (pan-y, arm-on-tap, a lock
+// chip, per-projection exceptions) traded one away for the other.
+//
+// So the two jobs are split instead. The card holds a PREVIEW: it renders the
+// real map with live tints, takes no gestures at all, and scrolls like any
+// other block. Tapping it opens the map FULLSCREEN, where nothing else wants
+// the gestures and touch-action:none is simply correct. There, every
+// projection drags on both axes, always, with no modes to learn.
 function setScale(id, s){
   var V=inst(id), n=clamp(s, 0.7, 8);
   if (Math.abs(n-V.scale) < 1e-4) return;
@@ -782,13 +978,19 @@ function setScale(id, s){
 }
 function zoom(id, dir){ setScale(id, inst(id).scale * (dir>0 ? 1.35 : 1/1.35)); }
 function syncZoom(id){
-  var V=inst(id), box=document.getElementById('nctl-'+id), b, i;
+  // Query the whole widget, not the button row: the zoom pair lives in its own
+  // row now, so scoping to #nctl- would silently find nothing.
+  var V=inst(id), box=document.getElementById('nmapbox-'+id), b, i, lvl;
   if (!box) return;
   b=box.querySelectorAll('[data-zoom]');
   for (i=0;i<b.length;i++){
     var d=+b[i].getAttribute('data-zoom');
     b[i].disabled = (d>0 && V.scale>=8-1e-6) || (d<0 && V.scale<=0.7+1e-6);
   }
+  // Mutate the existing node's text -- never rebuild it, or the buttons beside
+  // it lose their handlers.
+  lvl=document.getElementById('nzoom-'+id);
+  if (lvl) lvl.textContent = V.scale.toFixed(1)+'\u00d7';
 }
 function setData(vals, stale, week){
   DATA = { vals:vals||null, stale:!!stale, week:week||null };
@@ -804,10 +1006,195 @@ function resizeAll(){
 }
 window.addEventListener('resize', resizeAll);
 
+
+var SST = (function(){
+"use strict";
+
+var STEP_PX = 2;          // paint every 2nd pixel, then smooth-scale up
+var frames  = {};         // date -> { g:Int16Array, nlat, nlon, lat0, lon0, step, fill }
+var order   = [];         // dates, oldest first
+var idx     = 0, playing = false, timer = null, visible = false;
+var invKey  = '', invLL = null, invW = 0, invH = 0;
+var host    = null;       // the map instance id this layer paints into
+var onChange = function(){};
+
+/* ---- decode one Worker payload ---- */
+function addFrame(o){
+  if (!o || o.ok !== true || !o.data) return false;
+  var bin = atob(o.data), n = bin.length, buf = new ArrayBuffer(n), b = new Uint8Array(buf), i;
+  for (i = 0; i < n; i++) b[i] = bin.charCodeAt(i);
+  frames[o.date] = {
+    g: new Int16Array(buf), nlat:o.nlat, nlon:o.nlon,
+    lat0:o.lat0, lon0:o.lon0, step:o.step,
+    fill:(o.fill === undefined ? -32768 : o.fill),
+    scale:(o.scale || 100), variable:o.variable, source:o.source
+  };
+  if (order.indexOf(o.date) < 0){ order.push(o.date); order.sort(); }
+  idx = order.length - 1;                 // newest by default
+  return true;
+}
+
+/* ---- bilinear sample; NaN over land, gaps, or outside the box ---- */
+function sample(F, lon, lat){
+  var l = ((lon % 360) + 360) % 360;                 // grid is 0..360
+  var fx = (l - F.lon0) / F.step, fy = (lat - F.lat0) / F.step;
+  if (fx < 0 || fy < 0 || fx > F.nlon - 1 || fy > F.nlat - 1) return NaN;
+  var x0 = fx | 0, y0 = fy | 0;
+  var x1 = x0 + 1 > F.nlon - 1 ? x0 : x0 + 1;
+  var y1 = y0 + 1 > F.nlat - 1 ? y0 : y0 + 1;
+  var tx = fx - x0, ty = fy - y0, f = F.fill, g = F.g;
+  var a = g[y0*F.nlon+x0], b = g[y0*F.nlon+x1],
+      c = g[y1*F.nlon+x0], d = g[y1*F.nlon+x1];
+  // Any land corner poisons the interpolation, so refuse rather than blend a
+  // coastline into a plausible-looking temperature.
+  if (a === f || b === f || c === f || d === f) return NaN;
+  return ((a*(1-tx) + b*tx)*(1-ty) + (c*(1-tx) + d*tx)*ty) / F.scale;
+}
+
+/* ---- anomaly -> colour. Diverging, white at zero, saturating at +/-3. ---- */
+var RAMP = null;
+function buildRamp(){
+  RAMP = new Uint8Array(512 * 3);
+  for (var i = 0; i < 512; i++){
+    var t = (i / 511) * 2 - 1, r, g, b, u = Math.abs(t);
+    if (t >= 0){ r = 255; g = Math.round(255 - 200*u); b = Math.round(255 - 215*u); }
+    else       { r = Math.round(255 - 205*u); g = Math.round(255 - 130*u); b = 255; }
+    RAMP[i*3] = r; RAMP[i*3+1] = g; RAMP[i*3+2] = b;
+  }
+}
+function rampIdx(v){
+  var t = v / 3; if (t < -1) t = -1; if (t > 1) t = 1;
+  return ((t + 1) / 2 * 511) | 0;
+}
+
+/* ---- the expensive part, done once per view ---- */
+function buildInverse(V, PROJ, unrot, latOf){
+  var w = Math.ceil(V.w / STEP_PX), h = Math.ceil(V.h / STEP_PX);
+  var ll = new Float32Array(w * h * 2), P = PROJ[V.proj], i = 0, px, py, c, u;
+  for (py = 0; py < h; py++){
+    for (px = 0; px < w; px++, i++){
+      c = P.inv((px*STEP_PX + STEP_PX/2 - V.cx) / V.R,
+                (py*STEP_PX + STEP_PX/2 - V.cy) / V.R);
+      if (!c){ ll[i*2] = NaN; continue; }
+      u = unrot(c[0], c[1], V.rot[0], latOf(V));
+      ll[i*2] = u[0]; ll[i*2+1] = u[1];
+    }
+  }
+  invLL = ll; invW = w; invH = h;
+}
+function viewKey(V){
+  return V.proj+'|'+V.rot[0].toFixed(2)+'|'+V.rot[1].toFixed(2)+'|'
+       + V.scale.toFixed(3)+'|'+V.w+'x'+V.h;
+}
+
+/* ---- paint the current frame into a small canvas ---- */
+var buf = null, bctx = null;
+function paint(V, PROJ, unrot, latOf){
+  if (!visible || !order.length) return null;
+  var F = frames[order[idx]];
+  if (!F) return null;
+  if (!RAMP) buildRamp();
+
+  var k = viewKey(V);
+  if (k !== invKey){ buildInverse(V, PROJ, unrot, latOf); invKey = k; }
+
+  if (!buf){
+    buf = document.createElement('canvas');
+    bctx = buf.getContext('2d');
+  }
+  if (buf.width !== invW || buf.height !== invH){ buf.width = invW; buf.height = invH; }
+
+  var img = bctx.createImageData(invW, invH), d = img.data;
+  var n = invW * invH, i, lon, lat, v, ri;
+  for (i = 0; i < n; i++){
+    lon = invLL[i*2];
+    if (lon !== lon) continue;                       // NaN: off the map
+    lat = invLL[i*2+1];
+    v = sample(F, lon, lat);
+    if (v !== v) continue;                           // NaN: land or gap
+    ri = rampIdx(v) * 3;
+    d[i*4]   = RAMP[ri];
+    d[i*4+1] = RAMP[ri+1];
+    d[i*4+2] = RAMP[ri+2];
+    d[i*4+3] = 205;
+  }
+  bctx.putImageData(img, 0, 0);
+  return buf;
+}
+
+/* ---- playback ---- */
+function stop(){ playing = false; if (timer){ clearInterval(timer); timer = null; } onChange(); }
+function play(){
+  if (order.length < 2) return;
+  playing = true;
+  timer = setInterval(function(){
+    idx = (idx + 1) % order.length;
+    onChange();
+  }, 420);
+  onChange();
+}
+function toggle(){ playing ? stop() : play(); }
+function seek(i){ stop(); idx = Math.max(0, Math.min(order.length-1, i|0)); onChange(); }
+function setVisible(on){ visible = !!on; if (!visible) stop(); invKey = ''; onChange(); }
+
+function state(){
+  var F = order.length ? frames[order[idx]] : null;
+  return { visible:visible, playing:playing, i:idx, n:order.length,
+           date:order[idx] || null, newest:order[order.length-1] || null,
+           variable:F ? F.variable : null, source:F ? F.source : null };
+}
+// Age is judged on the NEWEST frame we hold, not on the one being displayed --
+// a paused time-lapse sitting on frame 3 of 12 is not evidence of anything.
+function ageDays(){
+  var d = order[order.length-1];
+  if (!d) return null;
+  return (Date.now() - Date.parse(d + 'T12:00:00Z')) / 864e5;
+}
+function reset(){ frames = {}; order = []; idx = 0; stop(); invKey=''; }
+
+return { addFrame:addFrame, paint:paint, play:play, stop:stop, toggle:toggle,
+         seek:seek, setVisible:setVisible, state:state, ageDays:ageDays,
+         reset:reset, onChange:function(f){ onChange = f; },
+         _sample:sample, _rampIdx:rampIdx, _frames:function(){ return frames; },
+         _invSize:function(){ return [invW, invH]; } };
+})();
+
+// Any frame change or playback tick redraws every mounted map and refreshes
+// the player row (date label, play/pause glyph, slider position).
+SST.onChange(function(){
+  Object.keys(INST).forEach(function(id){
+    if (document.getElementById('nmap-'+id)) draw(id);
+    if (document.getElementById('nsst-'+id)) sstRow(id);
+  });
+});
+
+// The SST layer needs the same projection maths; hand it the internals rather
+// than letting it re-derive them.
+function paintSst(V){ return SST.paint(V, PROJ, unrot, latOf); }
+
+
+/* ==========================================================================
+   SST ANOMALY LAYER  —  time-lapse painting under the Niño boxes
+   --------------------------------------------------------------------------
+   SST is a SCALAR field, so there is nothing to advect: nullschool's drifting
+   threads are particles following a VECTOR field (currents, wind). Animating a
+   temperature field means stepping through dates, not moving anything.
+
+   The cost is all in the inverse projection. Painting every pixel needs
+   lon/lat for that pixel, and on Winkel that is a 40-iteration Newton solve --
+   about 97,000 solves for a 390x250 canvas. Per frame that is roughly 2 fps.
+
+   But the inverse depends only on the VIEW, never on the data. So it is solved
+   once per view into a Float32Array and reused for every frame; a frame then
+   costs one bilinear sample and a colour lookup per pixel. The cache is
+   rebuilt on drag-END, not during a drag.
+   ========================================================================== */
 return { markup:markup, mount:mount, setProj:setProj, setView:setView, zoom:zoom,
+         SST:SST, _paintSst:paintSst, sstRow:sstRow,
+         openFull:openFull, closeFull:closeFull, fullShell:fullShell, ctlRow:ctlRow,
          setData:setData, setI18n:setI18n, resizeAll:resizeAll,
          REGIONS:REGIONS, _ramp:ramp, _cutRing:cutRing, _PROJ:PROJ,
-         _rot:rot, _unrot:unrot };
+         _rot:rot, _unrot:unrot, _view:inst };
 })();
 </script>
 
@@ -1054,7 +1441,9 @@ var T = {
                en:'NOAA CPC tracks the sea-surface temperature anomaly in these four boxes every week. The boxes are drawn in true coordinates and their edges follow the sphere rather than cutting across it. Colour is this week\u2019s anomaly: red = warmer, blue = cooler. Drag to rotate.'},
   mapViewPac: {zh:'太平洋', en:'Pacific'},
   mapViewMY:  {zh:'马来西亚', en:'Malaysia'},
-  mapDragHint:{zh:'拖动旋转 · 滚轮／双指缩放', en:'drag to rotate · wheel/pinch to zoom'},
+  mapDragHint:{zh:'任意方向拖动旋转 · 双指或按钮缩放',
+               en:'Drag any direction to rotate · pinch or use the buttons to zoom'},
+  mapOpen:    {zh:'点开大图', en:'Open full map'},
   mapZoomIn:  {zh:'放大', en:'Zoom in'},
   mapZoomOut: {zh:'缩小', en:'Zoom out'},
   wkChange:   {zh:'较上周', en:'Change vs last week'},
@@ -1062,6 +1451,14 @@ var T = {
   wkRegionsMoved:{zh:'Niño 1+2 / 3 / 4 的本周数值见下方地图卡，不在这里重复。',
                   en:'Niño 1+2 / 3 / 4 for this week are on the map card below, not repeated here.'},
   wkSame:     {zh:'持平', en:'no change'},
+  swNew:      {zh:'已有新版本', en:'A new version is ready'},
+  swReload:   {zh:'立即更新', en:'Update now'},
+  swUpdating: {zh:'更新中\u2026', en:'Updating\u2026'},
+  swBuild:    {zh:'版本', en:'Build'},
+  sstLayer:   {zh:'🌡 海温距平', en:'🌡 SST anomaly'},
+  sstHint:    {zh:'叠加 NOAA OISST 海面温度距平场，可播放近 12 周变化',
+               en:'Overlay the NOAA OISST sea-surface temperature anomaly field; play the last 12 weeks'},
+  sstStale:   {zh:'⚠️ 海温场数据过期，暂不显示。', en:'⚠️ The SST field is out of date and is withheld.'},
   // --- hero: the lag, and the direction of travel ---
   heroLag:    {zh:'RONI 是三个月平均值，上面这个数字描述的是 {s}，比今天落后约 6 周。事件正在发展时，它一定会低估当下。最新一周的 Niño 3.4 见下方。',
                en:'RONI is a three-month mean, so the number above describes {s} — roughly six weeks behind today. While an event is developing it will always understate the present. The latest weekly Niño 3.4 is below.'},
@@ -1989,6 +2386,7 @@ function load(){
   // Monthly DMI: only ever used if BoM has no weekly figure. Bonus feed, so a
   // failure resolves to null rather than taking the whole load down.
   var dmiFeed = getFeed('dmimon').catch(function(){ return null; });
+  sstLoad();   // fire and forget: the map works fine without it
   Promise.all([ getFeed('roni'), getFeed('weekly'), iodFeed, mjoFeed, monFeed, outFeed, dmiFeed ])
     .then(function(res){
       var roni = parseSeasonal(res[0], 2);   // RONI anom in col 2
@@ -2348,7 +2746,8 @@ function render(roni, weekly, cachedAt, iod, mjo, mon, out){
   +'</div>'
 
   +'<button class="btn ghost" onclick="load()">'+tr('refresh')+'</button>'
-  +'<button class="btn wabtn" onclick="shareWA()" aria-label="WhatsApp">'+waIcon()+'</button>';
+  +'<button class="btn wabtn" onclick="shareWA()" aria-label="WhatsApp">'+waIcon()+'</button>'
+  +'<div class="swver">'+tr('swBuild')+' <span id="swver">\u2026</span></div>';
 
   document.getElementById('app').innerHTML = html;
 
@@ -2618,6 +3017,17 @@ function helpBackdrop(e){
 function boot(){
   applyLang();
   NinoMap.setI18n(tr);   // module draws its own labels; give it the translator
+  // The fullscreen map lives at body level, outside every scrolling container,
+  // so it is never clipped by a card and never fights the page for gestures.
+  if (!document.getElementById('nmapfull')){
+    var shell = document.createElement('div');
+    shell.innerHTML = NinoMap.fullShell();
+    document.body.appendChild(shell.firstChild);
+  }
+  // Escape / Android back-ish: close the map before anything else.
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') NinoMap.closeFull();
+  });
   setTimeout(function(){
     var b = document.getElementById('boot');
     if (b) b.style.display='none';
@@ -2625,11 +3035,162 @@ function boot(){
   load();
 }
 window.addEventListener('load', boot);
-// Register the service worker so the app shell works offline.
+// ---- SST anomaly field -----------------------------------------------------
+// Frames are fetched progressively, newest first: the map is usable the moment
+// one arrives, and the player appears once there are two. Weekly spacing over
+// 12 weeks matches the weekly Nino 3.4 card, so the field and the numbers are
+// telling the same story over the same window.
+var SST_WEEKS = 12;
+function sstLoad(){
+  if (typeof NinoMap === 'undefined' || !NinoMap.SST) return;
+  getFeed('sst&date=last').then(function(txt){
+    var o = JSON.parse(txt);
+    if (!o || o.ok !== true) return;
+    NinoMap.SST.addFrame(o);
+    NinoMap.sstRow('full');
+    // Walk back from the date the SERVER gave us, not from today's date --
+    // the feed runs a day or two behind and guessing would ask for frames
+    // that do not exist yet.
+    var base = Date.parse(o.date + 'T12:00:00Z'), i;
+    for (i = 1; i < SST_WEEKS; i++){
+      (function(d){
+        getFeed('sst&date=' + d).then(function(t2){
+          var f = JSON.parse(t2);
+          if (f && f.ok === true) { NinoMap.SST.addFrame(f); NinoMap.sstRow('full'); }
+        }).catch(function(){});
+      })(new Date(base - i*7*864e5).toISOString().slice(0,10));
+    }
+  }).catch(function(){ /* no field today; the boxes still work */ });
+}
+
+// ---- Service worker: register, and actively WATCH for a new build --------
+// Registering alone is not enough. The browser only re-checks sw.js on its own
+// schedule, so a PWA left open for days can miss a deploy entirely. We check on
+// load, whenever the app is brought back to the foreground, whenever the
+// network returns, and every 15 minutes while it stays open.
+var SW_REG = null, SW_RELOADING = false;
+
+function swShowUpdate(reg, newVer){
+  if (document.getElementById('swbar')) return;   // already offered
+  var bar = document.createElement('div');
+  bar.id = 'swbar';
+  bar.className = 'swbar';
+  bar.innerHTML = '<span>'+tr('swNew')+'</span>'
+    + '<button type="button" id="swgo">'+tr('swReload')+'</button>';
+  document.body.appendChild(bar);
+  document.getElementById('swgo').onclick = function(){
+    this.disabled = true;
+    this.textContent = tr('swUpdating');
+    // The waiting worker activates, which fires controllerchange below, which
+    // reloads. If anything goes wrong, reload anyway after a moment rather
+    // than leaving the button spinning forever.
+    // Two paths. Normally a worker is already waiting and we just tell it to
+    // take over. But the probe can spot a new build BEFORE the browser has
+    // installed it, and in that case there is nothing to message -- so kick an
+    // update and reload once it lands.
+    if (reg && reg.waiting) {
+      reg.waiting.postMessage({ type:'SKIP_WAITING' });
+    } else if (reg) {
+      reg.update().then(function(){
+        if (reg.waiting) reg.waiting.postMessage({ type:'SKIP_WAITING' });
+      }).catch(function(){});
+    }
+    setTimeout(function(){ if (!SW_RELOADING) location.reload(); }, 2500);
+  };
+}
+
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function(){
-    navigator.serviceWorker.register('./sw.js').catch(function(){ /* ignore */ });
+  // Registered immediately, not on 'load'. This script is at the end of body,
+  // so the DOM is ready, and waiting for every image to finish just delays the
+  // check on exactly the slow connections where it matters most.
+  (function(){
+    // updateViaCache:'none' — never let an HTTP-cached copy of sw.js hide a
+    // deploy from us.
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+      .then(function(reg){
+        SW_REG = reg;
+        if (reg.waiting && navigator.serviceWorker.controller) swShowUpdate(reg);
+        reg.addEventListener('updatefound', function(){
+          var nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', function(){
+            // controller check: on a FIRST ever install there is nothing to
+            // update from, so do not nag a new user about a "new version".
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              swShowUpdate(reg);
+            }
+          });
+        });
+        swCheck();
+        setInterval(swCheck, 15*60*1000);
+        document.addEventListener('visibilitychange', function(){
+          if (!document.hidden) swCheck();
+        });
+        window.addEventListener('online', swCheck);
+        swReportVersion(reg);
+      })
+      .catch(function(){ /* ignore: the app works without it */ });
+  })();
+
+  // A standalone PWA resumed from bfcache never fires 'load' again, so this is
+  // the event that actually matters on a phone.
+  window.addEventListener('pageshow', function(ev){ if (ev.persisted) swCheck(); });
+
+  // When the new worker takes control, reload once so the page matches it.
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if (SW_RELOADING) return;
+    SW_RELOADING = true;
+    location.reload();
   });
+}
+
+function swCheck(){
+  if (SW_REG) SW_REG.update().catch(function(){});
+  swProbe();
+}
+
+// Ask the SERVER directly what build it is holding.
+//
+// This exists because the lifecycle route is not dependable on mobile. In a
+// standalone PWA the page is often restored from bfcache, so 'load' never fires
+// again; iOS throttles reg.update(); and on the launch right after a deploy the
+// running page is still the OLD build, whose script has no watcher in it at all
+// -- which is why an update needed a second launch to appear. Fetching sw.js
+// with cache:'no-store' and reading its version string works regardless of any
+// of that: two strings, compared.
+var SW_RUNNING = null, SW_OFFERED = null;
+function swProbe(){
+  fetch('./sw.js?probe=' + Date.now(), { cache:'no-store' })
+    .then(function(r){ return r.ok ? r.text() : null; })
+    .then(function(txt){
+      if (!txt) return;
+      var m = txt.match(/CACHE_VERSION\s*=\s*["']([^"']+)["']/);
+      if (!m || !SW_RUNNING) return;
+      if (m[1] !== SW_RUNNING && SW_OFFERED !== m[1]) {
+        SW_OFFERED = m[1];
+        swShowUpdate(SW_REG, m[1]);
+      }
+    })
+    .catch(function(){ /* offline: nothing to say */ });
+}
+
+// Ask the active worker which build it is and show it in the footer, so a
+// device stuck on an old cache is visible instead of a guess.
+function swReportVersion(reg){
+  var sw = (reg && reg.active) || navigator.serviceWorker.controller;
+  if (!sw || typeof MessageChannel === 'undefined') return;
+  try {
+    var ch = new MessageChannel();
+    ch.port1.onmessage = function(e){
+      var el = document.getElementById('swver');
+      if (e.data && e.data.version) {
+        SW_RUNNING = e.data.version;
+        if (el) el.textContent = e.data.version;
+        swProbe();          // now that we know what is running, compare it
+      }
+    };
+    sw.postMessage({ type:'VERSION' }, [ch.port2]);
+  } catch (err) { /* not important enough to fail anything */ }
 }
 // safety: never let boot screen stick
 setTimeout(function(){var b=document.getElementById('boot');if(b)b.style.display='none';},12000);
