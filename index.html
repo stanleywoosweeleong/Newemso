@@ -188,9 +188,16 @@
   .nmapfull-canvas{flex:1 1 auto;min-height:0;position:relative;background:#f8fafc}
   .nmapfull-canvas .ninocanvas{width:100%;height:100%;border-radius:0;
     touch-action:none}
-  .nmapfull-ctl{flex-shrink:0;padding:10px 14px;border-top:1px solid var(--line);
-    display:flex;flex-direction:column;gap:8px;
+  /* The control stack grows when the SST player and its legend appear. Cap it
+     and let it scroll: without this the extra rows pushed the mode buttons off
+     the bottom of the screen with no way to reach them. */
+  .nmapfull-ctl{flex:0 0 auto;padding:10px 14px;border-top:1px solid var(--line);
+    display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
     padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  .nmapfull-canvas{min-height:120px}
+  .sstnote.bad{color:#b91c1c}
+  .mapbtn:disabled{opacity:.45;cursor:default}
   body.nmap-locked{overflow:hidden}
   .mapctl-sst{gap:8px}
   .mapctl-sst:empty{display:none}
@@ -861,35 +868,51 @@ function ctlRow(id){
      +'<div class="mapctl mapctl-sst" id="nsst-'+id+'"></div>';
 }
 
-var SST_MAX_AGE_DAYS = 10;
-// SST controls render only when there is something to control -- an empty
-// player would imply data that has not arrived, or a feed that failed.
+// Two tiers, as elsewhere in this app. Past SST_DEAD_DAYS the source is
+// presumed broken and the field is withheld. Between FRESH and DEAD it is
+// SHOWN but flagged: every frame carries its own date in the player, so a
+// dated time-lapse cannot pretend to be today the way a bare number could.
+var SST_FRESH_DAYS = 10, SST_DEAD_DAYS = 45;
+
 function sstRow(id){
   var el = document.getElementById('nsst-'+id);
   if (!el) return;
-  var s = SST.state(), age = SST.ageDays();
-  if (!s.n){ el.innerHTML = ''; return; }
-  // Same rule as every other feed here: too old and it is withheld rather
-  // than shown as though it were now.
-  if (age !== null && age > SST_MAX_AGE_DAYS){
-    el.innerHTML = '<span class="mapread">'+trFn('sstStale')+'</span>';
-    if (s.visible) SST.setVisible(false);
-    return;
+  var s = SST.state(), age = SST.ageDays(), v = s.variable, isSst = (v === 'sst');
+  var dead = (age !== null && age > SST_DEAD_DAYS);
+  var aged = (age !== null && age > SST_FRESH_DAYS && !dead);
+  // setVisible() mutates state AFTER we snapshotted it, so track visibility
+  // locally -- otherwise the withheld branch still rendered the player from the
+  // stale snapshot.
+  if (dead && s.visible) SST.setVisible(false);
+  var vis = s.visible && !dead;
+
+  // The layer toggle and the variable buttons are ALWAYS rendered. They used to
+  // sit inside the "have frames" and "not stale" branches, so switching
+  // variable -- which clears the store by design -- emptied the whole row, and
+  // a stale field replaced it with a warning. Either way every control
+  // vanished and there was no way back to the other variable.
+  function vbtn(key, lbl){
+    return '<button type="button" class="mapbtn'+(v===key?' on':'')+'"'
+      + (dead ? ' disabled' : '')
+      +' onclick="NinoMap.SST.setVariable(\''+key+'\')">'+trFn(lbl)+'</button>';
   }
-  var v = s.variable, isSst = (v === 'sst');
-  function vbtn(id2, key, lbl){
-    return '<button type="button" class="mapbtn'+(v===key?' on':'')+'" '
-      +'onclick="NinoMap.SST.setVariable(\''+key+'\')">'+trFn(lbl)+'</button>';
-  }
+  var status =
+      dead   ? trFn('sstDead').replace('{d}', s.newest||'?').replace('{n}', age.toFixed(0))
+    : !s.n   ? trFn('sstLoading')
+    : aged   ? trFn('sstAged').replace('{d}', s.newest||'?').replace('{n}', age.toFixed(0))
+             : '';
+  var src = (status && s.source) ? ' \u00b7 ' + s.source : '';
+
   el.innerHTML =
      '<div class="mapctl">'
-       +'<button type="button" class="mapbtn'+(s.visible?' on':'')+'" '
-         +'onclick="NinoMap.SST.setVisible('+(s.visible?'false':'true')+')">'
+       +'<button type="button" class="mapbtn'+(vis?' on':'')+'"'
+         + (dead ? ' disabled' : '')
+         +' onclick="NinoMap.SST.setVisible('+(vis?'false':'true')+')">'
          + trFn('sstLayer')+'</button>'
-       + (s.visible ? vbtn(id,'anom','sstVarAnom') + vbtn(id,'sst','sstVarSst') : '')
-       + (s.visible ? '' : '<span class="mapread">'+trFn('sstHint')+'</span>')
+       + vbtn('anom','sstVarAnom') + vbtn('sst','sstVarSst')
      +'</div>'
-   + (s.visible
+   + (status ? '<div class="mapread sstnote'+(dead?' bad':'')+'">'+status+src+'</div>' : '')
+   + (vis && s.n
       ? '<div class="mapctl">'
           +'<button type="button" class="mapbtn zbtn" style="min-width:38px" '
             +'onclick="NinoMap.SST.toggle()">'+(s.playing?'\u2758\u2758':'\u25b6')+'</button>'
@@ -897,16 +920,13 @@ function sstRow(id){
             +'oninput="NinoMap.SST.seek(this.value)">'
           +'<span class="mapread sstdate">'+(s.date||'')+'</span>'
         +'</div>'
-        // Absolute temperature needs a scale; the anomaly ramp is
-        // self-explanatory but gets one too, for consistency.
         +'<div class="sstlegend">'
           +'<span>'+(isSst ? '16\u00b0' : '\u22123.0')+'</span>'
           +'<i style="background:'+SST.rampCss(v)+'"></i>'
           +'<span>'+(isSst ? '32\u00b0C' : '+3.0')+'</span>'
         +'</div>'
-        +'<div class="mapread sstnote">'
-          + trFn(isSst ? 'sstNoteSst' : 'sstNoteAnom') +'</div>'
-      : '');
+        +'<div class="mapread sstnote">'+ trFn(isSst ? 'sstNoteSst' : 'sstNoteAnom') +'</div>'
+      : (vis ? '' : '<div class="mapread sstnote">'+trFn('sstHint')+'</div>'));
 }
 
 // The card's map is a PREVIEW: drawn with live tints, but it registers no
@@ -1258,7 +1278,7 @@ function state(){
   return { visible:visible, playing:playing, i:idx, n:order.length,
            date:order[idx] || null, newest:order[order.length-1] || null,
            variable:variable, frameVar:F ? F.variable : null,
-           source:F ? F.source : null };
+           source:(F && F.source) || null };
 }
 // Age is judged on the NEWEST frame we hold, not on the one being displayed --
 // a paused time-lapse sitting on frame 3 of 12 is not evidence of anything.
@@ -1617,7 +1637,11 @@ var T = {
   sstLayer:   {zh:'🌡 海温距平', en:'🌡 SST anomaly'},
   sstHint:    {zh:'叠加 NOAA OISST 海面温度距平场，可播放近 12 周变化',
                en:'Overlay the NOAA OISST sea-surface temperature anomaly field; play the last 12 weeks'},
-  sstStale:   {zh:'⚠️ 海温场数据过期，暂不显示。', en:'⚠️ The SST field is out of date and is withheld.'},
+  sstLoading: {zh:'正在载入海温场…', en:'Loading the SST field…'},
+  sstAged:    {zh:'⚠️ 最新一帧为 {d}（{n} 天前）。图仍可看，但每一帧都请以它自己的日期为准。',
+               en:'⚠️ Newest frame is {d} ({n} days old). Still usable, but read each frame by its own date.'},
+  sstDead:    {zh:'⚠️ 海温场最新只到 {d}（{n} 天前），已超出正常延迟，暂不显示。可能是 NOAA 近实时数据源没有回应，退回到了两周延迟的最终版。',
+               en:'⚠️ The SST field only reaches {d} ({n} days old), beyond any normal latency, so it is withheld. Likely the NOAA near-real-time source did not answer and the two-week-delayed final product was used instead.'},
   sstVarAnom: {zh:'距平', en:'Anomaly'},
   sstVarSst:  {zh:'实测海温', en:'Actual SST'},
   sstNoteAnom:{zh:'距平＝比 1971–2000 年同期平均高多少。注意：本图的气候基准是 1971–2000，而上方 Niño 指数用的是 1991–2020，所以本图颜色会略偏暖 —— 看形状与走向，不要拿来读数值。',
